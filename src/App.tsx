@@ -593,7 +593,7 @@ function App() {
       }, 0);
     });
     return () => { active = false; authSubscription.subscription.unsubscribe(); };
-  }, [systemClosed]);
+  }, []);
 
   useEffect(() => {
     const online = () => { setIsOnline(true); setOfflineUnlocked(false); };
