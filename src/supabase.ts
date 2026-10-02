@@ -62,14 +62,13 @@ export const auth = {
       name: String(data.user.user_metadata?.name || data.user.user_metadata?.full_name || ''),
     };
   },
-  async signIn(emailInput: string) {
+  async signIn(emailInput: string, password: string) {
     const email = String(emailInput || '').trim().toLowerCase();
-    const bootstrap = await authApi('/email-login', { email });
-    const password = String(bootstrap?.temporaryPassword || '');
-    if (!password) throw new Error('د ایمیل حساب اتومات فعال نه شو.');
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const secret = String(password || '');
+    if (!email || !secret) throw new Error('د حساب داخلي اعتبار بشپړ نه شو.');
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: secret });
     if (error || !data.user) {
-      throw Object.assign(new Error(error?.message || 'د ایمیل له لارې ننوتل ناکام شول.'), {
+      throw Object.assign(new Error(error?.message || 'د حساب ننوتل ناکام شول.'), {
         code: error?.code || 'auth_error',
         status: error?.status,
       });
