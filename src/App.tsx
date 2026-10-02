@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, api } from '@appdeploy/client';
+import { api, authApi as auth } from './firebase-api';
 import { PresenceBar } from './presence';
 import { DeviceGate, DeviceSecurityCard, hasDeviceLock, registerDeviceLock } from './device-lock';
 import {
@@ -913,8 +913,12 @@ function App() {
 
   async function signIn() {
     try {
-      const result = await auth.signIn({ scope: 'openid email profile offline_access' });
-      handleAuthenticatedUser(result.user);
+      const result = await auth.signIn();
+      if (result.user) {
+        handleAuthenticatedUser(result.user);
+      } else if (result.pendingEmail) {
+        setToast(`د ${result.pendingEmail} لپاره د ننوتلو لینک ایمیل ته واستول شو؛ لینک خلاص کړئ، بیا همدا سیستم پرانیزئ.`);
+      }
     } catch (e: any) {
       const code = e?.code;
       setToast(
