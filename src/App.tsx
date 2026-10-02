@@ -790,8 +790,7 @@ function App() {
           localStorage.setItem('finance_last_user_email', emailKey);
           setLastUserEmail(emailKey);
         }
-        const forceDeviceGate = localStorage.getItem('finance_exit_device_gate') === emailKey;
-        const needsDevice = forceDeviceGate || isAdminEmail(current.email || '') || hasDeviceLock(current.email || '');
+        const needsDevice = true;
         setPendingUser(current);
         setDeviceLocked(needsDevice);
         setUser(needsDevice ? null : current);
