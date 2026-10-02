@@ -518,7 +518,6 @@ function App() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [offlineUnlocked, setOfflineUnlocked] = useState(false);
   const [lastUserEmail, setLastUserEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
-  const [systemClosed, setSystemClosed] = useState(() => localStorage.getItem('finance_system_closed') === '1');
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('finance_lang') as Lang) || 'ps');
   const [theme, setTheme] = useState<'dark' | 'light'>((localStorage.getItem('finance_theme') as any) || 'dark');
   const [section, setSection] = useState<Section>('home');
@@ -530,8 +529,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
-  const [authCooldown, setAuthCooldown] = useState(0);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
     try {
@@ -548,13 +545,6 @@ function App() {
     auth.getUser()
       .then(async current => {
         if (!active) return;
-        if (systemClosed) {
-          await auth.signOut().catch(() => {});
-          setUser(null);
-          setPendingUser(null);
-          setDeviceLocked(false);
-          return;
-        }
         if (!current) {
           setUser(null);
           setPendingUser(null);
@@ -566,12 +556,10 @@ function App() {
           localStorage.setItem('finance_last_user_email', emailKey);
           setLastUserEmail(emailKey);
         }
-        const forceDeviceGate = localStorage.getItem('finance_exit_device_gate') === emailKey;
-        const needsDevice = forceDeviceGate || isAdminEmail(current.email || '') || hasDeviceLock(current.email || '');
+        const needsDevice = true;
         setPendingUser(current);
         setDeviceLocked(needsDevice);
         setUser(needsDevice ? null : current);
-        api.post('/api/profile', {}).catch(() => {});
       })
       .catch(() => {
         if (active) {
@@ -695,73 +683,24 @@ function App() {
       setLastUserEmail(emailKey);
     }
     setPendingUser(nextUser);
-    const needsDevice = isAdminEmail(nextUser?.email || '') || hasDeviceLock(nextUser?.email || '');
-    setDeviceLocked(needsDevice);
-    setUser(needsDevice ? null : nextUser);
-    api.post('/api/profile', {}).catch(() => {});
+    setDeviceLocked(true);
+    setUser(null);
   }
 
-  async function signIn(email?: string, password?: string) {
+  async function signIn(email?: string) {
     if (authBusy) return;
     const emailValue = String(email || '').trim().toLowerCase();
-    let passwordValue = String(password || '');
     if (!emailValue) {
       setToast('مهرباني وکړئ ایمیل ولیکئ.');
       return;
     }
-    const isAdminAttempt = isAdminEmail(emailValue);
-    if (!passwordValue && isAdminAttempt) {
-      try {
-        const savedAdminPassword = localStorage.getItem('finance_admin_temp_password') || '';
-        if (savedAdminPassword) {
-          passwordValue = savedAdminPassword;
-        } else {
-          setAuthBusy(true);
-          const boot = await auth.bootstrapAdmin();
-          if (!boot?.temporaryPassword) throw new Error('د ادارې حساب اتومات فعال نه شو.');
-          passwordValue = String(boot.temporaryPassword);
-          localStorage.setItem('finance_admin_temp_password', passwordValue);
-        }
-      } catch (e: any) {
-        setAuthBusy(false);
-        setToast(e?.message || 'د ادارې حساب لومړی ځل فعالول ناکام شول.');
-        return;
-      }
-    }
-    if (passwordValue.length < 6) {
-      setToast('مهرباني وکړئ لږ تر لږه ۶ رقمي/کرکټري PIN یا رمز ولیکئ.');
-      return;
-    }
-    setAuthBusy(true);
-    try {
-      const result = await auth.signIn(emailValue, passwordValue);
-      if (result?.user) handleAuthenticatedUser(result.user);
-    } catch (e: any) {
-      setToast(e?.message || 'ایمیل یا PIN/رمز سم نه دی.');
-    } finally {
-      setAuthBusy(false);
-    }
-  }
 
-  async function registerAccount(email?: string, password?: string) {
-    if (authBusy) return;
-    const emailValue = String(email || '').trim().toLowerCase();
-    const passwordValue = String(password || '');
-    if (!emailValue) {
-      setToast('مهرباني وکړئ ایمیل ولیکئ.');
-      return;
-    }
-    if (passwordValue.length < 6) {
-      setToast('د حساب لپاره لږ تر لږه ۶ رقمي/کرکټري PIN یا رمز وټاکئ.');
-      return;
-    }
     setAuthBusy(true);
     try {
-      await auth.register(emailValue, passwordValue);
-      const result = await auth.signIn(emailValue, passwordValue);
+      const result = await auth.signIn(emailValue);
       if (result?.user) handleAuthenticatedUser(result.user);
     } catch (e: any) {
-      setToast(e?.message || 'حساب جوړ نه شو؛ شاید دا ایمیل مخکې ثبت شوی وي.');
+      setToast(e?.message || 'د ایمیل له لارې ننوتل ناکام شول.');
     } finally {
       setAuthBusy(false);
     }
@@ -847,25 +786,11 @@ function App() {
       setTx([]);
       setLedger([]);
     }
-    localStorage.removeItem('finance_system_closed');
-    setSystemClosed(false);
   }
 
   async function refreshSystemData() {
     await loadAll();
     setToast('معلومات تازه شول.');
-  }
-
-  if (systemClosed) {
-    return (
-      <SystemClosedScreen
-        onReopen={() => {
-          localStorage.removeItem('finance_system_closed');
-          setSystemClosed(false);
-        }}
-        onSignIn={signIn}
-      />
-    );
   }
 
   if (!authReady) {
@@ -919,10 +844,7 @@ function App() {
         setTheme={setTheme}
         t={t}
         onSignIn={signIn}
-        onRegister={registerAccount}
         authBusy={authBusy}
-        authMode={authMode}
-        setAuthMode={setAuthMode}
       />
     );
 
@@ -1154,11 +1076,9 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
   );
 }
 
-function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBusy, authMode, setAuthMode }: any) {
+function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
   const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
-  const [password, setPassword] = useState(() => localStorage.getItem('finance_admin_temp_password') || '');
-  const isRegister = authMode === 'register';
-  const submit = () => (isRegister ? onRegister : onSignIn)(email.trim(), password);
+  const submit = () => onSignIn(email.trim());
   return (
     <div className="login-page">
       <div className="login-glow" />
@@ -1167,56 +1087,35 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBu
           <MofLogo size={58} />
         </div>
         <div className="eyebrow">
-          <span className="live-dot" /> آنلاین • خوندي • RTL
+          <span className="live-dot" /> آنلاین • ایمیل + د موبایل Fingerprint/PIN
         </div>
         <h1>{t.login}</h1>
         <h2>{t.app}</h2>
-        <p>{t.access}</p>
+        <p>لومړی ځل یوازې خپل ایمیل ولیکئ. له هغې وروسته سیستم د همدې موبایل Fingerprint یا د موبایل PIN په وسیله خلاصیږي.</p>
         <label className="login-email-field">
           {t.email}
           <input
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && email.trim() && !authBusy) submit();
+            }}
             placeholder="name@example.com"
             autoComplete="email"
             inputMode="email"
             dir="ltr"
           />
         </label>
-        <label className="login-email-field">
-          {isRegister ? 'نوی PIN / رمز' : 'PIN / رمز'}
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && email.trim() && password.length >= 6 && !authBusy) submit();
-            }}
-            placeholder="لږ تر لږه ۶ کرکټرونه"
-            autoComplete={isRegister ? 'new-password' : 'current-password'}
-            dir="ltr"
-          />
-        </label>
         <button
           className="primary big"
           onClick={submit}
-          disabled={!email.trim() || authBusy || (isRegister ? password.length < 6 : (password.length < 6 && email.trim().toLowerCase() !== 'hafzaywb553@gmail.com'))}
+          disabled={!email.trim() || authBusy}
         >
-          <span>{isRegister ? '＋' : '🔐'}</span>
-          {authBusy ? 'لږ شېبه...' : isRegister ? 'نوی حساب جوړول' : 'ننوتل'}
+          <FingerprintIcon />
+          {authBusy ? 'لږ شېبه...' : 'ایمیل سره ننوتل'}
         </button>
-        <button
-          type="button"
-          className="ghost big"
-          onClick={() => setAuthMode(isRegister ? 'login' : 'register')}
-          disabled={authBusy}
-        >
-          {isRegister ? 'د موجود حساب ننوتل' : 'لومړی ځل؟ نوی حساب جوړ کړئ'}
-        </button>
-        {!isRegister && email.trim().toLowerCase() === 'hafzaywb553@gmail.com' && !password && (
-          <small>د ادارې حساب د لومړي ځل لپاره په اتومات ډول فعالېږي؛ ایمیل یا ۶۰ ثانیې انتظار ته اړتیا نشته.</small>
-        )}
+        <small>هیڅ Password، PIN، OTP یا د ایمیل انتظار ته اړتیا نشته. د لومړي ایمیل وروسته د دې موبایل د Fingerprint/PIN قفل فعالېږي.</small>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
             <option value="ps">پښتو</option>
@@ -1236,6 +1135,10 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBu
       </div>
     </div>
   );
+}
+
+function FingerprintIcon() {
+  return <ShieldCheck size={20} />;
 }
 
 function HomePage({ t, people, totals, onGo }: any) {
