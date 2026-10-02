@@ -529,6 +529,8 @@ function App() {
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authCooldown, setAuthCooldown] = useState(0);
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
     try {
@@ -582,7 +584,26 @@ function App() {
       .finally(() => {
         if (active) setAuthReady(true);
       });
-    return () => { active = false; };
+    const { data: authSubscription } = auth.onAuthStateChange((event: string, session: any) => {
+      if (!active) return;
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setPendingUser(null);
+        setDeviceLocked(false);
+        return;
+      }
+      const sessionUser = session?.user;
+      if (!sessionUser) return;
+      const nextUser = {
+        userId: sessionUser.id,
+        email: sessionUser.email || '',
+        name: String(sessionUser.user_metadata?.name || sessionUser.user_metadata?.full_name || ''),
+      };
+      window.setTimeout(() => {
+        if (active) handleAuthenticatedUser(nextUser);
+      }, 0);
+    });
+    return () => { active = false; authSubscription.subscription.unsubscribe(); };
   }, [systemClosed]);
 
   useEffect(() => {
@@ -680,23 +701,47 @@ function App() {
   }
 
   async function signIn(email?: string) {
+    if (authBusy || authCooldown > 0) return;
+    const emailValue = String(email || '').trim().toLowerCase();
+    if (!emailValue) {
+      setToast('مهرباني وکړئ ایمیل ولیکئ.');
+      return;
+    }
+
+    setAuthBusy(true);
     try {
-      const result = await auth.signIn(email || '');
+      const result = await auth.signIn(emailValue);
+      setAuthCooldown(60);
       if (result?.user) handleAuthenticatedUser(result.user);
-      else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. ایمیل خلاص کړئ او لینک ووهئ.');
+      else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. Gmail/Inbox او Spam وګورئ؛ لینک ووهئ، بیا به سیسټم په اوتومات ډول پرانیستل شي.');
     } catch (e: any) {
       const code = e?.code;
-      setToast(
-        code === 'popup_blocked'
-          ? 'د ایمیل ننوتلو کړکۍ بنده ده؛ د براوزر Pop-up اجازه ورکړئ.'
-          : code === 'popup_closed'
-            ? 'د ننوتلو کړکۍ له بشپړېدو مخکې بنده شوه.'
-            : code === 'auth_error'
-              ? 'د ایمیل تصدیق ناکام شو؛ بیا هڅه وکړئ.'
-              : `د ننوتلو ستونزه: ${code || 'نامعلومه تېروتنه'}`
-      );
+      const status = e?.status;
+      if (code === 'over_email_send_rate_limit') {
+        setAuthCooldown(60);
+        setToast('د ایمیل لېږلو د Supabase حد پوره شوی. پرله‌پسې کلیک مه کوئ؛ وروسته بیا هڅه وکړئ.');
+      } else if (code === 'over_request_rate_limit' || status === 429) {
+        setAuthCooldown(60);
+        setToast('د ننوتلو غوښتنې ډېرې شوې دي. لږ انتظار وکړئ او بیا یوازې یو ځل کلیک وکړئ.');
+      } else if (code === 'otp_disabled') {
+        setToast('د ایمیل Login په Supabase کې فعال نه دی.');
+      } else if (code === 'email_address_not_authorized') {
+        setToast('دا ایمیل د Supabase د اوسني Email Provider له خوا اجازه نه لري.');
+      } else {
+        setToast(e?.message || `د ننوتلو ستونزه: ${code || 'نامعلومه تېروتنه'}`);
+      }
+    } finally {
+      setAuthBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (authCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setAuthCooldown(value => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [authCooldown]);
 
   async function installApp() {
     if (!installEvent) return;
@@ -1081,7 +1126,7 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
   );
 }
 
-function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
+function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCooldown }: any) {
   const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
   return (
     <div className="login-page">
@@ -1102,16 +1147,22 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && email.trim()) onSignIn(email.trim()); }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && email.trim() && !authBusy && authCooldown === 0) onSignIn(email.trim());
+            }}
             placeholder="name@example.com"
             autoComplete="email"
             inputMode="email"
             dir="ltr"
           />
         </label>
-        <button className="primary big" onClick={() => onSignIn(email.trim())} disabled={!email.trim()}>
+        <button
+          className="primary big"
+          onClick={() => onSignIn(email.trim())}
+          disabled={!email.trim() || authBusy || authCooldown > 0}
+        >
           <span>✉</span>
-          {t.email}
+          {authBusy ? 'لېږل کېږي...' : authCooldown > 0 ? `بیا ${authCooldown} ثانیې وروسته` : t.email}
         </button>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
