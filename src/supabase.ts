@@ -36,8 +36,16 @@ export const auth = {
       email,
       options: { emailRedirectTo: redirectTo, shouldCreateUser: true },
     });
-    if (error) throw Object.assign(new Error(error.message), { code: 'auth_error' });
+    if (error) {
+      throw Object.assign(new Error(error.message), {
+        code: error.code || 'auth_error',
+        status: error.status,
+      });
+    }
     return { user: null, email };
+  },
+  onAuthStateChange(callback: Parameters<typeof supabase.auth.onAuthStateChange>[0]) {
+    return supabase.auth.onAuthStateChange(callback);
   },
   async signOut() { await supabase.auth.signOut(); },
 };
