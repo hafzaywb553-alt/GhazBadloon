@@ -530,7 +530,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
-  const [authCooldown, setAuthCooldown] = useState(0);
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
     try {
@@ -565,12 +564,10 @@ function App() {
           localStorage.setItem('finance_last_user_email', emailKey);
           setLastUserEmail(emailKey);
         }
-        const forceDeviceGate = localStorage.getItem('finance_exit_device_gate') === emailKey;
-        const needsDevice = forceDeviceGate || isAdminEmail(current.email || '') || hasDeviceLock(current.email || '');
+        const needsDevice = true;
         setPendingUser(current);
         setDeviceLocked(needsDevice);
         setUser(needsDevice ? null : current);
-        api.post('/api/profile', {}).catch(() => {});
       })
       .catch(() => {
         if (active) {
@@ -694,14 +691,12 @@ function App() {
       setLastUserEmail(emailKey);
     }
     setPendingUser(nextUser);
-    const needsDevice = isAdminEmail(nextUser?.email || '') || hasDeviceLock(nextUser?.email || '');
-    setDeviceLocked(needsDevice);
-    setUser(needsDevice ? null : nextUser);
-    api.post('/api/profile', {}).catch(() => {});
+    setDeviceLocked(true);
+    setUser(null);
   }
 
   async function signIn(email?: string) {
-    if (authBusy || authCooldown > 0) return;
+    if (authBusy) return;
     const emailValue = String(email || '').trim().toLowerCase();
     if (!emailValue) {
       setToast('مهرباني وکړئ ایمیل ولیکئ.');
@@ -711,37 +706,29 @@ function App() {
     setAuthBusy(true);
     try {
       const result = await auth.signIn(emailValue);
-      setAuthCooldown(60);
-      if (result?.user) handleAuthenticatedUser(result.user);
-      else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. Gmail/Inbox او Spam وګورئ؛ لینک ووهئ، بیا به سیسټم په اوتومات ډول پرانیستل شي.');
+      if (result?.user) {
+        handleAuthenticatedUser(result.user);
+      } else {
+        setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. لینک خلاص کړئ؛ بیا به یوازې د همدې موبایل Fingerprint/PIN تصدیق وغواړي.');
+      }
     } catch (e: any) {
       const code = e?.code;
       const status = e?.status;
       if (code === 'over_email_send_rate_limit') {
-        setAuthCooldown(60);
-        setToast('د ایمیل لېږلو د Supabase حد پوره شوی. پرله‌پسې کلیک مه کوئ؛ وروسته بیا هڅه وکړئ.');
+        setToast('د Supabase ایمیل د لېږلو حد پوره شوی. نوی لینک اوس نه شي لېږل کېدای.');
       } else if (code === 'over_request_rate_limit' || status === 429) {
-        setAuthCooldown(60);
-        setToast('د ننوتلو غوښتنې ډېرې شوې دي. لږ انتظار وکړئ او بیا یوازې یو ځل کلیک وکړئ.');
+        setToast('د ننوتلو غوښتنو حد پوره شوی. وروسته بیا یو ځل هڅه وکړئ.');
       } else if (code === 'otp_disabled') {
         setToast('د ایمیل Login په Supabase کې فعال نه دی.');
       } else if (code === 'email_address_not_authorized') {
-        setToast('دا ایمیل د Supabase د اوسني Email Provider له خوا اجازه نه لري.');
+        setToast('دا ایمیل د اوسني Email Provider له خوا اجازه نه لري.');
       } else {
-        setToast(e?.message || `د ننوتلو ستونزه: ${code || 'نامعلومه تېروتنه'}`);
+        setToast(e?.message || ('د ننوتلو ستونزه: ' + (code || 'نامعلومه تېروتنه')));
       }
     } finally {
       setAuthBusy(false);
     }
   }
-
-  useEffect(() => {
-    if (authCooldown <= 0) return;
-    const timer = window.setInterval(() => {
-      setAuthCooldown(value => (value > 0 ? value - 1 : 0));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [authCooldown]);
 
   async function installApp() {
     if (!installEvent) return;
@@ -895,8 +882,6 @@ function App() {
         setTheme={setTheme}
         t={t}
         onSignIn={signIn}
-        authBusy={authBusy}
-        authCooldown={authCooldown}
       />
     );
 
@@ -1128,7 +1113,7 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
   );
 }
 
-function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCooldown }: any) {
+function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
   const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
   return (
     <div className="login-page">
@@ -1150,7 +1135,7 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCool
             value={email}
             onChange={e => setEmail(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter' && email.trim() && !authBusy && authCooldown === 0) onSignIn(email.trim());
+              if (e.key === 'Enter' && email.trim() && !authBusy) onSignIn(email.trim());
             }}
             placeholder="name@example.com"
             autoComplete="email"
@@ -1161,10 +1146,10 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCool
         <button
           className="primary big"
           onClick={() => onSignIn(email.trim())}
-          disabled={!email.trim() || authBusy || authCooldown > 0}
+          disabled={!email.trim() || authBusy}
         >
           <span>✉</span>
-          {authBusy ? 'لېږل کېږي...' : authCooldown > 0 ? `بیا ${authCooldown} ثانیې وروسته` : t.email}
+          {authBusy ? 'لېږل کېږي...' : t.email}
         </button>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
