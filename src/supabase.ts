@@ -28,9 +28,8 @@ export const auth = {
     if (error || !data.user) return null;
     return { userId: data.user.id, email: data.user.email || '', name: String(data.user.user_metadata?.name || data.user.user_metadata?.full_name || '') };
   },
-  async signIn() {
-    const saved = localStorage.getItem('finance_last_user_email') || '';
-    const email = String(window.prompt('د ننوتلو لپاره خپل ایمیل ولیکئ:', saved) || '').trim().toLowerCase();
+  async signIn(emailInput: string) {
+    const email = String(emailInput || '').trim().toLowerCase();
     if (!email) throw Object.assign(new Error('ایمیل داخل نه شو.'), { code: 'email_required' });
     const redirectTo = window.location.origin + window.location.pathname;
     const { error } = await supabase.auth.signInWithOtp({
