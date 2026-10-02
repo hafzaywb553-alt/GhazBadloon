@@ -518,6 +518,7 @@ function App() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [offlineUnlocked, setOfflineUnlocked] = useState(false);
   const [lastUserEmail, setLastUserEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
+  const [systemClosed, setSystemClosed] = useState(() => localStorage.getItem('finance_system_closed') === '1');
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('finance_lang') as Lang) || 'ps');
   const [theme, setTheme] = useState<'dark' | 'light'>((localStorage.getItem('finance_theme') as any) || 'dark');
   const [section, setSection] = useState<Section>('home');
@@ -529,6 +530,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
+  const [authCooldown, setAuthCooldown] = useState(0);
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
     try {
@@ -545,6 +547,13 @@ function App() {
     auth.getUser()
       .then(async current => {
         if (!active) return;
+        if (systemClosed) {
+          await auth.signOut().catch(() => {});
+          setUser(null);
+          setPendingUser(null);
+          setDeviceLocked(false);
+          return;
+        }
         if (!current) {
           setUser(null);
           setPendingUser(null);
@@ -556,10 +565,12 @@ function App() {
           localStorage.setItem('finance_last_user_email', emailKey);
           setLastUserEmail(emailKey);
         }
-        const needsDevice = true;
+        const forceDeviceGate = localStorage.getItem('finance_exit_device_gate') === emailKey;
+        const needsDevice = forceDeviceGate || isAdminEmail(current.email || '') || hasDeviceLock(current.email || '');
         setPendingUser(current);
         setDeviceLocked(needsDevice);
         setUser(needsDevice ? null : current);
+        api.post('/api/profile', {}).catch(() => {});
       })
       .catch(() => {
         if (active) {
@@ -593,7 +604,7 @@ function App() {
       }, 0);
     });
     return () => { active = false; authSubscription.subscription.unsubscribe(); };
-  }, []);
+  }, [systemClosed]);
 
   useEffect(() => {
     const online = () => { setIsOnline(true); setOfflineUnlocked(false); };
@@ -683,64 +694,54 @@ function App() {
       setLastUserEmail(emailKey);
     }
     setPendingUser(nextUser);
-    setDeviceLocked(true);
-    setUser(null);
-  }
-
-  function makeDeviceSecret() {
-    const bytes = crypto.getRandomValues(new Uint8Array(32));
-    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    const needsDevice = isAdminEmail(nextUser?.email || '') || hasDeviceLock(nextUser?.email || '');
+    setDeviceLocked(needsDevice);
+    setUser(needsDevice ? null : nextUser);
+    api.post('/api/profile', {}).catch(() => {});
   }
 
   async function signIn(email?: string) {
-    if (authBusy) return;
+    if (authBusy || authCooldown > 0) return;
     const emailValue = String(email || '').trim().toLowerCase();
     if (!emailValue) {
       setToast('مهرباني وکړئ ایمیل ولیکئ.');
       return;
     }
 
-    const secretKey = 'finance_device_secret:' + emailValue;
-    let hiddenSecret = localStorage.getItem(secretKey) || '';
-    if (!hiddenSecret && isAdminEmail(emailValue)) {
-      const legacyAdminSecret = localStorage.getItem('finance_admin_temp_password') || '';
-      if (legacyAdminSecret) {
-        hiddenSecret = legacyAdminSecret;
-        localStorage.setItem(secretKey, hiddenSecret);
-      }
-    }
-
     setAuthBusy(true);
     try {
-      if (!hiddenSecret) {
-        if (isAdminEmail(emailValue)) {
-          const boot = await auth.bootstrapAdmin();
-          if (!boot?.temporaryPassword) {
-            throw new Error('د مدیر حساب لومړی ځل فعال نه شو.');
-          }
-          hiddenSecret = String(boot.temporaryPassword);
-        } else {
-          hiddenSecret = makeDeviceSecret();
-          try {
-            await auth.register(emailValue, hiddenSecret);
-          } catch (e: any) {
-            if (e?.code === 'user_exists' || e?.status === 409) {
-              throw new Error('دا ایمیل لا مخکې ثبت شوی، خو په دې موبایل کې یې د لومړي ځل داخلي ثبت بشپړ شوی نه دی.');
-            }
-            throw e;
-          }
-        }
-        localStorage.setItem(secretKey, hiddenSecret);
-      }
-
-      const result = await auth.signIn(emailValue, hiddenSecret);
+      const result = await auth.signIn(emailValue);
+      setAuthCooldown(60);
       if (result?.user) handleAuthenticatedUser(result.user);
+      else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. Gmail/Inbox او Spam وګورئ؛ لینک ووهئ، بیا به سیسټم په اوتومات ډول پرانیستل شي.');
     } catch (e: any) {
-      setToast(e?.message || 'د ایمیل له لارې ننوتل ناکام شول.');
+      const code = e?.code;
+      const status = e?.status;
+      if (code === 'over_email_send_rate_limit') {
+        setAuthCooldown(60);
+        setToast('د ایمیل لېږلو د Supabase حد پوره شوی. پرله‌پسې کلیک مه کوئ؛ وروسته بیا هڅه وکړئ.');
+      } else if (code === 'over_request_rate_limit' || status === 429) {
+        setAuthCooldown(60);
+        setToast('د ننوتلو غوښتنې ډېرې شوې دي. لږ انتظار وکړئ او بیا یوازې یو ځل کلیک وکړئ.');
+      } else if (code === 'otp_disabled') {
+        setToast('د ایمیل Login په Supabase کې فعال نه دی.');
+      } else if (code === 'email_address_not_authorized') {
+        setToast('دا ایمیل د Supabase د اوسني Email Provider له خوا اجازه نه لري.');
+      } else {
+        setToast(e?.message || `د ننوتلو ستونزه: ${code || 'نامعلومه تېروتنه'}`);
+      }
     } finally {
       setAuthBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (authCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setAuthCooldown(value => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [authCooldown]);
 
   async function installApp() {
     if (!installEvent) return;
@@ -822,11 +823,25 @@ function App() {
       setTx([]);
       setLedger([]);
     }
+    localStorage.removeItem('finance_system_closed');
+    setSystemClosed(false);
   }
 
   async function refreshSystemData() {
     await loadAll();
     setToast('معلومات تازه شول.');
+  }
+
+  if (systemClosed) {
+    return (
+      <SystemClosedScreen
+        onReopen={() => {
+          localStorage.removeItem('finance_system_closed');
+          setSystemClosed(false);
+        }}
+        onSignIn={signIn}
+      />
+    );
   }
 
   if (!authReady) {
@@ -848,7 +863,6 @@ function App() {
           setDeviceLocked(false);
           localStorage.removeItem('finance_exit_device_gate');
           setUser(pendingUser);
-          api.post('/api/profile', {}).catch(() => {});
         }}
         onSignOut={signOut}
       />
@@ -882,6 +896,7 @@ function App() {
         t={t}
         onSignIn={signIn}
         authBusy={authBusy}
+        authCooldown={authCooldown}
       />
     );
 
@@ -1113,9 +1128,8 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
   );
 }
 
-function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
+function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCooldown }: any) {
   const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
-  const submit = () => onSignIn(email.trim());
   return (
     <div className="login-page">
       <div className="login-glow" />
@@ -1124,11 +1138,11 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
           <MofLogo size={58} />
         </div>
         <div className="eyebrow">
-          <span className="live-dot" /> آنلاین • ایمیل + د موبایل Fingerprint/PIN
+          <span className="live-dot" /> آنلاین • خوندي • RTL
         </div>
         <h1>{t.login}</h1>
         <h2>{t.app}</h2>
-        <p>لومړی ځل یوازې خپل ایمیل ولیکئ. حساب به په همدې موبایل کې ثبت شي، بیا سیستم یوازې د همدې موبایل Fingerprint یا د موبایل PIN غواړي.</p>
+        <p>{t.access}</p>
         <label className="login-email-field">
           {t.email}
           <input
@@ -1136,7 +1150,7 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
             value={email}
             onChange={e => setEmail(e.target.value)}
             onKeyDown={e => {
-              if (e.key === 'Enter' && email.trim() && !authBusy) submit();
+              if (e.key === 'Enter' && email.trim() && !authBusy && authCooldown === 0) onSignIn(email.trim());
             }}
             placeholder="name@example.com"
             autoComplete="email"
@@ -1146,13 +1160,12 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
         </label>
         <button
           className="primary big"
-          onClick={submit}
-          disabled={!email.trim() || authBusy}
+          onClick={() => onSignIn(email.trim())}
+          disabled={!email.trim() || authBusy || authCooldown > 0}
         >
-          <FingerprintIcon />
-          {authBusy ? 'لږ شېبه...' : 'ایمیل سره ننوتل'}
+          <span>✉</span>
+          {authBusy ? 'لېږل کېږي...' : authCooldown > 0 ? `بیا ${authCooldown} ثانیې وروسته` : t.email}
         </button>
-        <small>هیڅ Password، OTP، لینک یا ۶۰ ثانیې انتظار نشته. لومړی ایمیل وروسته بیا یوازې د همدې موبایل Fingerprint/PIN کارول کېږي.</small>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
             <option value="ps">پښتو</option>
@@ -1172,10 +1185,6 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
       </div>
     </div>
   );
-}
-
-function FingerprintIcon() {
-  return <ShieldCheck size={20} />;
 }
 
 function HomePage({ t, people, totals, onGo }: any) {
