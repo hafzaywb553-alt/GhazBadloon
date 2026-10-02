@@ -1,5 +1,5 @@
-const CACHE = 'finance-management-shell-v5';
-const CORE = ['./', './index.html', './manifest.webmanifest'];
+const CACHE = 'finance-management-shell-v6';
+const CORE = ['./', './index.html', './manifest.webmanifest', './resources/finance-logo.jpg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(

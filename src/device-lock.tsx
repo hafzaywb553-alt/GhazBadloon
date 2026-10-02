@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Fingerprint, ShieldCheck } from 'lucide-react';
+import { Fingerprint, ShieldCheck, Trash2 } from 'lucide-react';
 
 const KEY_PREFIX = 'finance_device_lock_v1:';
 function keyFor(email: string) {
@@ -134,7 +134,6 @@ export function DeviceGate({ email, isAdmin, onUnlocked, onSignOut }: {
             {busy ? 'فعالیږي...' : 'Fingerprint / د موبایل PIN فعالول'}
           </button>
         )}
-        <button className="ghost big" onClick={onSignOut}>بېرته وتل</button>
         {message && <div className="notice warn">{message}</div>}
       </div>
     </div>
@@ -154,17 +153,24 @@ export function DeviceSecurityCard({ email, isAdmin }: { email: string; isAdmin:
       setMessage(e?.message || 'د وسیلې امنیت فعال نه شو.');
     }
   };
+  const remove = () => {
+    if (isAdmin) return;
+    localStorage.removeItem(keyFor(email));
+    setLocked(false);
+    setMessage('د وسیلې قفل لرې شو.');
+  };
   return (
     <div className="settings-section device-security-card">
       <div className="settings-section-head">
         <div>
           <h3><ShieldCheck size={18} /> د موبایل امنیت</h3>
-          <p>{isAdmin ? 'د مدیر حساب لپاره fingerprint/PIN باید فعال پاتې شي.' : 'هر کاروونکی د همدې موبایل د fingerprint/PIN له لارې ننوځي؛ د قفل لرې کول اجازه نه لري.'}</p>
+          <p>{isAdmin ? 'د مدیر حساب لپاره fingerprint/PIN باید فعال پاتې شي.' : 'هر کاروونکی کولی شي خپل حساب د همدې موبایل د fingerprint/PIN له لارې قفل کړي.'}</p>
         </div>
       </div>
       <div className="device-security-status">
         <span>{locked ? 'فعال' : 'غیر فعال'}</span>
         {!locked && <button className="primary" onClick={setup}><Fingerprint size={17} /> فعالول</button>}
+        {locked && !isAdmin && <button className="danger-btn" onClick={remove}><Trash2 size={17} /> قفل لرې کول</button>}
       </div>
       {isAdmin && locked && <div className="notice ok">د مدیر قفل د حساب له تنظیماتو څخه نه شي بندېدای.</div>}
       {message && <div className="notice">{message}</div>}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, api } from './supabase';
+import { auth, api } from '@appdeploy/client';
 import { PresenceBar } from './presence';
 import { DeviceGate, DeviceSecurityCard, hasDeviceLock, registerDeviceLock } from './device-lock';
 import {
@@ -486,7 +486,242 @@ function num(v: string) {
   return Number.isFinite(value) ? roundMoney(value) : 0;
 }
 
-const MOF_LOGO_URL = './mof-app-icon.svg';
+const SOLAR_MONTHS_1405 = [
+  ['01','حمل'], ['02','ثور'], ['03','جوزا'], ['04','سرطان'], ['05','اسد'], ['06','سنبله'],
+  ['07','میزان'], ['08','عقرب'], ['09','قوس'], ['10','جدی'], ['11','دلو'], ['12','حوت'],
+] as const;
+
+function formatSolarDate(value: string | Date = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat('fa-AF-u-ca-persian', { year:'numeric', month:'2-digit', day:'2-digit' }).format(date).replace(/\u200e/g, '');
+}
+
+function formatSolarDateTime(value: string | Date = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat('fa-AF-u-ca-persian', { dateStyle:'full', timeStyle:'short' }).format(date).replace(/\u200e/g, '');
+}
+
+function formatSolarMonth(value: string) {
+  const raw = String(value || '').trim();
+  const normalized = raw.replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  if (/^1405-\d{2}$/.test(normalized)) return normalized.replace('-', '/');
+  if (/^\d{4}-\d{2}$/.test(normalized)) {
+    const d = new Date(`${normalized}-01T00:00:00Z`);
+    if (!Number.isNaN(d.getTime())) return formatSolarDate(d).slice(0, 7);
+  }
+  return raw;
+}
+
+function solar1405ToGregorianISO(value: string) {
+  const raw = String(value || '').trim().replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[-.]/g, '/');
+  const m = raw.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!m || Number(m[1]) !== 1405) return null;
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const monthDays = month <= 6 ? 31 : month <= 11 ? 30 : 29;
+  if (month < 1 || month > 12 || day < 1 || day > monthDays) return null;
+  const offset = (month - 1 <= 5 ? (month - 1) * 31 : 186 + (month - 7) * 30) + (day - 1);
+  return new Date(Date.UTC(2026, 2, 21) + offset * 86400000).toISOString().slice(0, 10);
+}
+
+function currentSolarDate() { return formatSolarDate(new Date()); }
+function currentSolarMonth() { return `${new Intl.DateTimeFormat('en-US-u-ca-persian', { year:'numeric', month:'2-digit' }).format(new Date()).replace(/[^0-9]/g,'')}`; }
+let activeUiLang: Lang = 'ps';
+
+const persianCalendarParts = new Intl.DateTimeFormat('en-US-u-ca-persian', { year:'numeric', month:'numeric', day:'numeric' });
+const solarMonthStartCache = new Map<string, number>();
+function solarCalendarParts(timestamp:number) {
+  const parts = persianCalendarParts.formatToParts(new Date(timestamp));
+  return { year:Number(parts.find(p=>p.type==='year')?.value||0), month:Number(parts.find(p=>p.type==='month')?.value||0), day:Number(parts.find(p=>p.type==='day')?.value||0) };
+}
+function solarMonthStartUTC(year:number, month:number) {
+  const key=year+'-'+month;
+  const cached=solarMonthStartCache.get(key);
+  if(cached!==undefined) return cached;
+  const base=Date.UTC(year+621,2,18);
+  for(let offset=0;offset<=370;offset++){
+    const ts=base+offset*86400000;
+    const p=solarCalendarParts(ts);
+    if(p.year===year&&p.month===month&&p.day===1){ solarMonthStartCache.set(key,ts); return ts; }
+  }
+  throw new Error('Solar month start not found');
+}
+function solarMonthDaysForYear(year:number, month:string|number) {
+  const m=Number(month);
+  if(!Number.isFinite(year)||year<1||!Number.isFinite(m)||m<1||m>12) return 30;
+  const a=solarMonthStartUTC(Math.floor(year),m);
+  const b=m===12?solarMonthStartUTC(Math.floor(year)+1,1):solarMonthStartUTC(Math.floor(year),m+1);
+  return Math.round((b-a)/86400000);
+}
+function getCurrentSolarYearMonth(){
+  const p=solarCalendarParts(Date.now());
+  return {year:String(p.year),month:String(p.month).padStart(2,'0')};
+}
+function toFaDigits(value:string|number){ return String(value).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[Number(d)]); }
+type SolarPeriod={year:number;month:number;monthName:string;monthDays:number;days:number};
+function buildSolarPeriods(startYear:number,startMonth:number,totalDays:number){
+  const out:SolarPeriod[]=[]; let y=startYear,m=startMonth,rem=Math.max(1,Math.floor(totalDays));
+  while(rem>0&&out.length<120){
+    const md=solarMonthDaysForYear(y,m), d=Math.min(rem,md);
+    out.push({year:y,month:m,monthName:SOLAR_MONTHS_1405[m-1]?.[1]||String(m),monthDays:md,days:d});
+    rem-=d; m++; if(m>12){m=1;y++;}
+  }
+  return out;
+}
+const EXTRA_UI_TRANSLATIONS: Record<string, Partial<Record<Lang, string>>> = {
+  'آنلاین مالي سیستم': {fa:'سیستم مالی آنلاین',ar:'النظام المالي عبر الإنترنت',ur:'آن لائن مالی نظام',en:'Online Finance System'},
+  'آنلاین • خوندي • RTL': {fa:'آنلاین • امن • RTL',ar:'متصل • آمن • RTL',ur:'آن لائن • محفوظ • RTL',en:'Online • Secure • RTL'},
+  'مالي کنټرول': {fa:'کنترل مالی',ar:'التحكم المالي',ur:'مالی کنٹرول',en:'Finance Control'},
+  'تاسې د مدیر په حساب کې یاست؛ د ټولو حسابونو ثبتونه درته ښکاري او د Edit/Delete صلاحیت لرئ.': {fa:'شما با حساب مدیر وارد شده‌اید؛ همه ثبت‌ها را می‌بینید و صلاحیت ویرایش/حذف دارید.',ar:'أنت تستخدم حساب المدير؛ تظهر لك جميع السجلات ولديك صلاحية التعديل والحذف.',ur:'آپ ایڈمن اکاؤنٹ میں ہیں؛ تمام ریکارڈز نظر آتے ہیں اور ترمیم/حذف کی اجازت ہے۔',en:'You are signed in as administrator; all records are visible and Edit/Delete permission is enabled.'},
+  'سیستم بند دی': {fa:'سیستم بسته است',ar:'النظام مغلق',ur:'سسٹم بند ہے',en:'System is closed'},
+  'سیستم په دې موبایل/براوزر کې بند شوی دی.': {fa:'سیستم در این موبایل/مرورگر بسته شده است.',ar:'تم إغلاق النظام على هذا الهاتف/المتصفح.',ur:'اس موبائل/براؤزر میں سسٹم بند ہے۔',en:'The system is closed on this device/browser.'},
+  'ستاسو کسان، معاشونه، عایدات او مصارف نه دي حذف شوي؛ په آنلاین Database کې خوندي پاتې دي.': {fa:'افراد، معاش‌ها، عواید و مصارف شما حذف نشده و در پایگاه آنلاین محفوظ مانده‌اند.',ar:'لم تُحذف سجلات الأفراد والرواتب والإيرادات والمصروفات؛ وهي محفوظة في قاعدة البيانات.',ur:'آپ کے افراد، تنخواہیں، آمدنی اور اخراجات حذف نہیں ہوئے؛ آن لائن ڈیٹابیس میں محفوظ ہیں۔',en:'Your personnel, payroll, income and expenses were not deleted and remain stored in the online database.'},
+  'سیستم بېرته پرانیستل': {fa:'باز کردن دوباره سیستم',ar:'إعادة فتح النظام',ur:'سسٹم دوبارہ کھولیں',en:'Reopen System'},
+  'د حساب سره ننوتل': {fa:'ورود با حساب',ar:'الدخول بالحساب',ur:'اکاؤنٹ سے لاگ ان',en:'Sign in to account'},
+  'د مالي مدیریت سیستم': {fa:'سیستم مدیریت مالی',ar:'نظام الإدارة المالية',ur:'مالی انتظامی نظام',en:'Finance Management System'},
+  '© ۲۰۲۶ • معلومات په آنلاین Database کې خوندي دي.': {fa:'© ۲۰۲۶ • اطلاعات در پایگاه آنلاین محفوظ است.',ar:'© ٢٠٢٦ • المعلومات محفوظة في قاعدة البيانات عبر الإنترنت.',ur:'© ۲۰۲۶ • معلومات آن لائن ڈیٹابیس میں محفوظ ہیں۔',en:'© 2026 • Information is stored in the online database.'},
+  'د حساب بدلول او له سیسټم وتل یوازې د sidebar د وروستي کنټرولونو له لارې دي.': {fa:'تغییر حساب و خروج از سیستم فقط از کنترل‌های پایانی نوار کناری انجام می‌شود.',ar:'تبديل الحساب والخروج من النظام يتمان فقط عبر عناصر التحكم الأخيرة في الشريط الجانبي.',ur:'اکاؤنٹ تبدیل کرنا اور سسٹم سے نکلنا صرف سائیڈبار کے آخری کنٹرولز سے ہوتا ہے۔',en:'Account switching and system exit are available only through the final sidebar controls.'},
+  'رسمي مالي راپور': {fa:'گزارش رسمی مالی',ar:'تقرير مالي رسمي',ur:'سرکاری مالی رپورٹ',en:'Official Financial Report'},
+  'د راپور نېټه:': {fa:'تاریخ گزارش:',ar:'تاريخ التقرير:',ur:'رپورٹ کی تاریخ:',en:'Report Date:'},
+  'جوړونکی: حافظ محیب الله ایوب': {fa:'سازنده: حافظ محیب الله ایوب',ar:'المنشئ: حافظ محیب الله أيوب',ur:'تخلیق کار: حافظ محیب الله ایوب',en:'Creator: Hafiz Mohibullah Ayoub'},
+  'کارکوونکي:': {fa:'کارمندان:',ar:'الموظفون:',ur:'ملازمین:',en:'Personnel:'},
+  'معاشونه:': {fa:'معاش‌ها:',ar:'الرواتب:',ur:'تنخواہیں:',en:'Payroll:'},
+  'مصارف:': {fa:'مصارف:',ar:'المصروفات:',ur:'اخراجات:',en:'Expenses:'},
+  'Ledger Debit:': {fa:'دفتر کل بدهکار:',ar:'مدين دفتر الأستاذ:',ur:'لیجر ڈیبٹ:',en:'Ledger Debit:'},
+  'Ledger Credit:': {fa:'دفتر کل بستانکار:',ar:'دائن دفتر الأستاذ:',ur:'لیجر کریڈٹ:',en:'Ledger Credit:'},
+  'راپور چاپ / PDF': {fa:'چاپ گزارش / PDF',ar:'طباعة التقرير / PDF',ur:'رپورٹ پرنٹ / PDF',en:'Print Report / PDF'},
+  'راپور شریکول': {fa:'اشتراک گزارش',ar:'مشاركة التقرير',ur:'رپورٹ شیئر کریں',en:'Share Report'},
+  'د راپور وخت': {fa:'زمان گزارش',ar:'وقت التقرير',ur:'رپورٹ کا وقت',en:'Report Time'},
+  'د توازن حالت': {fa:'وضعیت توازن',ar:'حالة التوازن',ur:'توازن کی حالت',en:'Balance Status'},
+  'برابر': {fa:'برابر',ar:'متساوٍ',ur:'برابر',en:'Balanced'},
+  'نا برابر': {fa:'نابرابر',ar:'غير متساوٍ',ur:'غیر برابر',en:'Unbalanced'},
+  'ټول ثبت شوي کارکوونکي': {fa:'مجموع کارمندان ثبت‌شده',ar:'إجمالي الموظفين المسجلين',ur:'کل رجسٹرڈ ملازمین',en:'Total Registered Personnel'},
+  'اوسنی خالص جریان': {fa:'جریان خالص فعلی',ar:'التدفق الصافي الحالي',ur:'موجودہ خالص بہاؤ',en:'Current Net Flow'},
+  'ټول Debit': {fa:'مجموع بدهکار',ar:'إجمالي المدين',ur:'کل ڈیبٹ',en:'Total Debit'},
+  'ټول Credit': {fa:'مجموع بستانکار',ar:'إجمالي الدائن',ur:'کل کریڈٹ',en:'Total Credit'},
+  'د دفتر توازن': {fa:'توازن دفتر',ar:'توازن الدفتر',ur:'لیجر کا توازن',en:'Ledger Balance'},
+  'سم': {fa:'درست',ar:'سليم',ur:'درست',en:'OK'},
+  'ستونزه': {fa:'مشکل',ar:'مشكلة',ur:'مسئله',en:'Problem'},
+  'د ثبت شوو double-entry محاسباتو مجموعي Debit او Credit سره برابر دي.': {fa:'مجموع بدهکار و بستانکار محاسبات دوطرفه ثبت‌شده برابر است.',ar:'إجمالي المدين والدائن للقيود مزدوجة القيد متساوٍ.',ur:'رجسٹرڈ ڈبل انٹری اکاؤنٹنگ کا کل ڈیبٹ اور کریڈٹ برابر ہے۔',en:'Total Debit and Credit of recorded double-entry accounting are balanced.'},
+  'د Debit او Credit په مجموعه کې توپیر شته؛ ثبت باید ودرول شي او وکتل شي.': {fa:'در مجموع بدهکار و بستانکار تفاوت وجود دارد؛ ثبت باید متوقف و بررسی شود.',ar:'يوجد اختلاف بين إجمالي المدين والدائن؛ يجب إيقاف التسجيل ومراجعته.',ur:'ڈیبٹ اور کریڈٹ میں فرق ہے؛ اندراج روک کر جانچنا چاہیے۔',en:'There is a Debit/Credit difference; entry should be stopped and reviewed.'},
+  'د دفتر توازن تایید شو.': {fa:'توازن دفتر تأیید شد.',ar:'تم تأكيد توازن الدفتر.',ur:'لیجر کا توازن تصدیق ہوگیا۔',en:'Ledger balance confirmed.'},
+  'د حسابدارۍ د توازن خطا موجوده ده.': {fa:'خطای توازن حسابداری وجود دارد.',ar:'يوجد خطأ في توازن المحاسبة.',ur:'اکاؤنٹنگ توازن میں خرابی ہے۔',en:'An accounting balance error exists.'},
+  'خلاصه': {fa:'خلاصه',ar:'ملخص',ur:'خلاصہ',en:'Summary'},
+  'میاشت': {fa:'ماه',ar:'الشهر',ur:'مہینہ',en:'Month'},
+  'حساب': {fa:'حساب',ar:'الحساب',ur:'اکاؤنٹ',en:'Account'},
+  'مراجعه': {fa:'مرجع',ar:'المرجع',ur:'حوالہ',en:'Reference'},
+  'تشریح': {fa:'شرح',ar:'الوصف',ur:'تفصیل',en:'Description'},
+  'نېټه': {fa:'تاریخ',ar:'التاريخ',ur:'تاریخ',en:'Date'},
+  'کسرات / مالیه': {fa:'کسورات / مالیات',ar:'الخصومات / الضريبة',ur:'کٹوتیاں / ٹیکس',en:'Deductions / Tax'},
+  'صافي پاتې رقم': {fa:'مبلغ خالص باقی‌مانده',ar:'المبلغ الصافي المتبقي',ur:'خالص باقی رقم',en:'Final Net Amount'},
+  'د معاش، اعاشې او امتیازونو مکمل مجموعه': {fa:'مجموع معاش، اعاشه و امتیازات',ar:'مجموع الراتب والإعاشة والبدلات',ur:'تنخواہ، اعاشہ اور الاؤنسز کا مکمل مجموعہ',en:'Total Salary, Feeding & Allowances'},
+  'غیرحاضر': {fa:'غایب',ar:'غائب',ur:'غیر حاضر',en:'Absent'},
+  'رخصت': {fa:'مرخصی',ar:'إجازة',ur:'چھٹی',en:'Leave'},
+  'کورس کابل': {fa:'کورس کابل',ar:'دورة كابل',ur:'کابل کورس',en:'Kabul Course'},
+  'مریض': {fa:'مریض',ar:'مريض',ur:'مریض',en:'Sick'},
+  'حاضر': {fa:'حاضر',ar:'حاضر',ur:'حاضر',en:'Present'},
+  'لیسانس': {fa:'لیسانس',ar:'ليسانس',ur:'گریجویشن',en:"Bachelor's"},
+  'ماستر': {fa:'ماستری',ar:'ماجستير',ur:'ماسٹرز',en:"Master's"},
+  'دوکتور': {fa:'دکترا',ar:'دكتوراه',ur:'پی ایچ ڈی',en:'Doctorate'},
+  'حمل': {fa:'حمل',ar:'الحمل',ur:'حمل',en:'Hamal'},
+  'ثور': {fa:'ثور',ar:'الثور',ur:'ثور',en:'Sawr'},
+  'جوزا': {fa:'جوزا',ar:'الجوزاء',ur:'جوزا',en:'Jawza'},
+  'سرطان': {fa:'سرطان',ar:'السرطان',ur:'سرطان',en:'Saratan'},
+  'اسد': {fa:'اسد',ar:'الأسد',ur:'اسد',en:'Asad'},
+  'سنبله': {fa:'سنبله',ar:'السنبلة',ur:'سنبله',en:'Sunbula'},
+  'میزان': {fa:'میزان',ar:'الميزان',ur:'میزان',en:'Mizan'},
+  'عقرب': {fa:'عقرب',ar:'العقرب',ur:'عقرب',en:'Aqrab'},
+  'قوس': {fa:'قوس',ar:'القوس',ur:'قوس',en:'Qaws'},
+  'جدی': {fa:'جدی',ar:'الجدي',ur:'جدی',en:'Jadi'},
+  'دلو': {fa:'دلو',ar:'الدلو',ur:'دلو',en:'Dalw'},
+  'حوت': {fa:'حوت',ar:'الحوت',ur:'حوت',en:'Hut'},
+  'د ملي دفاع وزارت': {fa:'وزارت دفاع ملی',ar:'وزارة الدفاع الوطني',ur:'وزارتِ دفاع',en:'Ministry of Defense'},
+  'د کورنیو چارو وزارت': {fa:'وزارت داخله',ar:'وزارة الداخلية',ur:'وزارتِ داخلہ',en:'Ministry of Interior'},
+  'د استخباراتو لوی ریاست': {fa:'ریاست عمومی استخبارات',ar:'المديرية العامة للاستخبارات',ur:'محکمۂ استخبارات',en:'General Directorate of Intelligence'},
+  'نور نظامي تشکیلات لرونکی امارتي واحد': {fa:'سایر واحدهای دولتی دارای تشکیلات نظامی',ar:'وحدات حكومية أخرى ذات تشكيلات عسكرية',ur:'دیگر سرکاری فوجی تشکیل والے یونٹ',en:'Other Government Units with Military Formations'},
+  'ملکي وزارت / لوی ریاست': {fa:'وزارت / ریاست عمومی ملکی',ar:'وزارة / إدارة عامة مدنية',ur:'سویلین وزارت / محکمہ',en:'Civilian Ministry / Directorate'},
+  'نظامي': {fa:'نظامی',ar:'عسكري',ur:'فوجی',en:'Military'},
+  'ملکي': {fa:'ملکی',ar:'مدني',ur:'سویلین',en:'Civilian'},
+  'د یوې ورځې اعاشه': {fa:'اعاشه یک روز',ar:'إعاشة يوم واحد',ur:'ایک دن کی اعاشہ',en:'Daily Feeding Allowance'},
+  'د ټاکل شوې میاشتې اعاشه': {fa:'اعاشه دوره انتخاب‌شده',ar:'إعاشة الفترة المحددة',ur:'منتخب مدت کی اعاشہ',en:'Selected Period Feeding'},
+  'د خدمت موده (کلونه)': {fa:'مدت خدمت (سال‌ها)',ar:'مدة الخدمة (بالسنوات)',ur:'سروس کی مدت (سال)',en:'Service Duration (Years)'},
+  'د خدمت مودې اتومات امتیاز': {fa:'امتیاز خودکار مدت خدمت',ar:'بدل مدة الخدمة التلقائي',ur:'سروس مدت کا خودکار الاؤنس',en:'Automatic Service Allowance'},
+  'د تحصیلي سند اتومات امتیاز': {fa:'امتیاز خودکار مدرک تحصیلی',ar:'البدل التلقائي للمؤهل الدراسي',ur:'تعلیمی سند کا خودکار الاؤنس',en:'Automatic Education Allowance'},
+  'د غیرحاضر ورځې': {fa:'روزهای غیبت',ar:'أيام الغياب',ur:'غیر حاضری کے دن',en:'Absent Days'},
+  'د حاضرۍ ورځې': {fa:'روزهای حاضری',ar:'أيام الحضور',ur:'حاضری کے دن',en:'Attendance Days'},
+  'د یوې ورځې اعاشه': {fa:'اعاشه یک روز',ar:'إعاشة يوم واحد',ur:'ایک دن کی اعاشہ',en:'Daily Feeding Allowance'},
+  'د محاسبې ورځې': {fa:'روزهای محاسبه',ar:'أيام الحساب',ur:'حساب کے دن',en:'Calculation Days'},
+  'خالي پرېږدئ = ټوله میاشت': {fa:'خالی بگذارید = تمام ماه',ar:'اتركه فارغاً = الشهر كامل',ur:'خالی چھوڑیں = پورا مہینہ',en:'Leave blank = full month'},
+  'د ټاکل شوې میاشتې ورځې': {fa:'روزهای ماه انتخاب‌شده',ar:'أيام الشهر المحدد',ur:'منتخب مہینے کے دن',en:'Days in selected month'},
+  'د محاسبې موده': {fa:'مدت محاسبه',ar:'مدة الحساب',ur:'حساب کی مدت',en:'Calculation period'},
+  'د میاشتو جلا جلا محاسبه': {fa:'محاسبه جداگانه ماه‌ها',ar:'الحساب المنفصل لكل شهر',ur:'ہر مہینے کا الگ حساب',en:'Separate Monthly Calculation'},
+  'د هرې میاشتې مالیه جلا محاسبه شوې او وروسته د ټولو میاشتو مالیې سره جمع شوې ده.': {fa:'مالیات هر ماه جداگانه محاسبه و سپس جمع شده است.',ar:'تم حساب ضريبة كل شهر بشكل منفصل ثم جمعها.',ur:'ہر مہینے کا ٹیکس الگ حساب کرکے پھر جمع کیا گیا ہے۔',en:'Tax is calculated separately for each month and then summed.'},
+  'د معاش حواله کولو بانک کسر (۱۵۰ افغانۍ)': {fa:'کسر بانک حواله معاش (۱۵۰ افغانی)',ar:'خصم البنك لتحويل الراتب (١٥٠ أفغاني)',ur:'تنخواہ منتقلی بینک کٹوتی (۱۵۰ افغانی)',en:'Bank Salary Transfer Deduction (150 AFN)'},
+  'تازه کول': {fa:'به‌روزرسانی',ar:'تحديث',ur:'تازہ کاری',en:'Refresh'},
+  'معلومات تازه کول': {fa:'به‌روزرسانی اطلاعات',ar:'تحديث المعلومات',ur:'معلومات تازہ کریں',en:'Refresh Information'},
+  'تصدیق کېږي...': {fa:'در حال تأیید...',ar:'جارٍ التحقق...',ur:'تصدیق ہو رہا ہے...',en:'Verifying...'},
+  'فعالیږي...': {fa:'در حال فعال‌سازی...',ar:'جارٍ التفعيل...',ur:'فعال ہو رہا ہے...',en:'Enabling...'},
+  'Fingerprint / د موبایل PIN': {fa:'Fingerprint / PIN موبایل',ar:'البصمة / PIN الهاتف',ur:'فنگرپرنٹ / موبائل PIN',en:'Fingerprint / Mobile PIN'},
+  'Fingerprint / د موبایل PIN فعالول': {fa:'فعال‌سازی Fingerprint / PIN موبایل',ar:'تفعيل البصمة / PIN الهاتف',ur:'فنگرپرنٹ / موبائل PIN فعال کریں',en:'Enable Fingerprint / Mobile PIN'},
+  'د مدیر وسیله تصدیق': {fa:'تأیید دستگاه مدیر',ar:'تحقق جهاز المدير',ur:'ایڈمن ڈیوائس تصدیق',en:'Administrator Device Verification'},
+  'د وسیلې خوندي ننوتل': {fa:'ورود امن دستگاه',ar:'تسجيل دخول الجهاز الآمن',ur:'محفوظ ڈیوائس لاگ ان',en:'Secure Device Sign-in'},
+  'امنیت': {fa:'امنیت',ar:'الأمان',ur:'سکیورٹی',en:'Security'},
+  'د کارولو لارښود': {fa:'راهنمای استفاده',ar:'دليل الاستخدام',ur:'استعمال کا رہنما',en:'User Guide'},
+  'زموږ سره اړیکه': {fa:'ارتباط با ما',ar:'اتصل بنا',ur:'ہم سے رابطہ',en:'Contact Us'},
+  'د بڼې اصلي حالت': {fa:'حالت اصلی ظاهر',ar:'المظهر الافتراضي',ur:'اصل شکل',en:'Default Appearance'},
+  'د تاریخونو اصلي حالت': {fa:'حالت اصلی تاریخ‌ها',ar:'الوضع الافتراضي للتواريخ',ur:'تاریخوں کی اصل حالت',en:'Default Date Settings'},
+  'د لمانځه اصلي حالت': {fa:'حالت اصلی نماز',ar:'إعدادات الصلاة الافتراضية',ur:'نماز کی اصل حالت',en:'Default Prayer Settings'},
+  'چمتو رنګونه': {fa:'رنگ‌های آماده',ar:'ألوان جاهزة',ur:'تیار رنگ',en:'Color Presets'},
+  'عمومي او ژبه': {fa:'عمومی و زبان',ar:'الإعدادات العامة واللغة',ur:'عمومی اور زبان',en:'General & Language'},
+  'نېټه، وخت او درې تقویمونه': {fa:'تاریخ، زمان و سه تقویم',ar:'التاريخ والوقت والتقاويم الثلاثة',ur:'تاریخ، وقت اور تین کیلنڈر',en:'Date, Time & Three Calendars'},
+  'د لمانځه بشپړ وختونه': {fa:'اوقات کامل نماز',ar:'أوقات الصلاة الكاملة',ur:'نماز کے مکمل اوقات',en:'Full Prayer Times'},
+  'خبرتیاوې او سیستم چلند': {fa:'هشدارها و رفتار سیستم',ar:'التنبيهات وسلوك النظام',ur:'تنبیہات اور نظام کا برتاؤ',en:'Alerts & System Behavior'},
+  'فونټ': {fa:'فونت',ar:'الخط',ur:'فونٹ',en:'Font'},
+  'د لیکنې اندازه': {fa:'اندازه متن',ar:'حجم النص',ur:'تحریر کا سائز',en:'Text Size'},
+  'د لیکنې ضخامت': {fa:'ضخامت متن',ar:'سماكة النص',ur:'تحریر کی موٹائی',en:'Text Weight'},
+  'د کارتونو ګردوالی': {fa:'گردی کارت‌ها',ar:'استدارة البطاقات',ur:'کارڈ کے گول کنارے',en:'Card Radius'},
+  'اصلي رنګ': {fa:'رنگ اصلی',ar:'اللون الأساسي',ur:'بنیادی رنگ',en:'Primary Color'},
+  'د شالید رنګ': {fa:'رنگ پس‌زمینه',ar:'لون الخلفية',ur:'پس منظر کا رنگ',en:'Background Color'},
+  'د پینل رنګ': {fa:'رنگ پنل',ar:'لون اللوحة',ur:'پینل کا رنگ',en:'Panel Color'},
+  'فعال': {fa:'فعال',ar:'مفعّل',ur:'فعال',en:'Enabled'},
+  'غیر فعال': {fa:'غیرفعال',ar:'معطّل',ur:'غیر فعال',en:'Disabled'},
+  'قفل لرې کول': {fa:'حذف قفل',ar:'إزالة القفل',ur:'لاک ہٹائیں',en:'Remove Lock'},
+};
+
+function translateStatic(value:string, lang:Lang=activeUiLang){
+  const source=String(value??'').trim();
+  if(!source) return source;
+  const candidates=[...Object.keys(T.ps), ...Object.keys(EXTRA_UI_TRANSLATIONS)];
+  for(const key of candidates){
+    const entry=Object.prototype.hasOwnProperty.call(T.ps,key)
+      ? {ps:T.ps[key], fa:T.fa[key], ar:T.ar[key], ur:T.ur[key], en:T.en[key]}
+      : ({ps:key, ...(EXTRA_UI_TRANSLATIONS[key]||{})} as Record<string,string|undefined>);
+    const vals=[entry.ps,entry.fa,entry.ar,entry.ur,entry.en].filter(Boolean) as string[];
+    if(vals.includes(source)) return lang==='ps' ? (entry.ps||source) : (entry[lang]||entry.ps||source);
+  }
+  return source;
+}
+
+function translateRenderedUi(lang:Lang){
+  const root=document.getElementById('root'); if(!root) return;
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT); let node=walker.nextNode();
+  while(node){
+    const parent=node.parentElement;
+    if(parent&&!['SCRIPT','STYLE','INPUT','TEXTAREA'].includes(parent.tagName)){
+      const raw=node.nodeValue||''; const lead=raw.match(/^\\s*/)?.[0]||''; const tail=raw.match(/\\s*$/)?.[0]||'';
+      const body=raw.slice(lead.length,raw.length-tail.length);
+      if(body){const x=translateStatic(body,lang); if(x!==body) node.nodeValue=lead+x+tail;}
+    }
+    node=walker.nextNode();
+  }
+  root.querySelectorAll<HTMLElement>('[placeholder],[title],[aria-label],[alt]').forEach(el=>{
+    for(const attr of ['placeholder','title','aria-label','alt']){const v=el.getAttribute(attr);if(v){const x=translateStatic(v,lang);if(x!==v)el.setAttribute(attr,x);}}
+  });
+}
+
+const MOF_LOGO_URL = './resources/finance-logo.jpg';
 function MofLogo({ size = 48 }: { size?: number }) {
   return (
     <span className="mof-logo" style={{ width: size, height: size }} aria-label="د افغانستان د مالیې وزارت لوګو">
@@ -497,7 +732,7 @@ function MofLogo({ size = 48 }: { size?: number }) {
           e.currentTarget.style.display = 'none';
         }}
       />
-      <ShieldCheck size={Math.max(22, Math.round(size * 0.62))} />
+
     </span>
   );
 }
@@ -529,7 +764,6 @@ function App() {
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
-  const [authBusy, setAuthBusy] = useState(false);
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
     try {
@@ -564,10 +798,12 @@ function App() {
           localStorage.setItem('finance_last_user_email', emailKey);
           setLastUserEmail(emailKey);
         }
-        const needsDevice = true;
+        const forceDeviceGate = localStorage.getItem('finance_exit_device_gate') === emailKey;
+        const needsDevice = forceDeviceGate || isAdminEmail(current.email || '') || hasDeviceLock(current.email || '');
         setPendingUser(current);
         setDeviceLocked(needsDevice);
         setUser(needsDevice ? null : current);
+        api.post('/api/profile', {}).catch(() => {});
       })
       .catch(() => {
         if (active) {
@@ -581,26 +817,7 @@ function App() {
       .finally(() => {
         if (active) setAuthReady(true);
       });
-    const { data: authSubscription } = auth.onAuthStateChange((event: string, session: any) => {
-      if (!active) return;
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setPendingUser(null);
-        setDeviceLocked(false);
-        return;
-      }
-      const sessionUser = session?.user;
-      if (!sessionUser) return;
-      const nextUser = {
-        userId: sessionUser.id,
-        email: sessionUser.email || '',
-        name: String(sessionUser.user_metadata?.name || sessionUser.user_metadata?.full_name || ''),
-      };
-      window.setTimeout(() => {
-        if (active) handleAuthenticatedUser(nextUser);
-      }, 0);
-    });
-    return () => { active = false; authSubscription.subscription.unsubscribe(); };
+    return () => { active = false; };
   }, [systemClosed]);
 
   useEffect(() => {
@@ -636,19 +853,27 @@ function App() {
     localStorage.setItem('finance_ui_settings', JSON.stringify(uiSettings));
   }, [uiSettings]);
   useEffect(() => {
+    activeUiLang = lang;
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === 'en' ? 'ltr' : 'rtl';
     document.body.dataset.theme = theme;
     localStorage.setItem('finance_lang', lang);
     localStorage.setItem('finance_theme', theme);
-  }, [lang, theme]);
+    translateRenderedUi(lang);
+    const root = document.getElementById('root');
+    if (!root) return;
+    const observer = new MutationObserver(() => translateRenderedUi(lang));
+    observer.observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['placeholder','title','aria-label','alt']});
+    return () => observer.disconnect();
+  }, [lang, theme, t]);
+
   useEffect(() => {
     if (!user) return;
     loadAll();
   }, [user]);
   useEffect(() => {
     if (toast) {
-      const id = setTimeout(() => setToast(''), 6000);
+      const id = setTimeout(() => setToast(''), 1800);
       return () => clearTimeout(id);
     }
   }, [toast]);
@@ -691,42 +916,27 @@ function App() {
       setLastUserEmail(emailKey);
     }
     setPendingUser(nextUser);
-    setDeviceLocked(true);
-    setUser(null);
+    const needsDevice = isAdminEmail(nextUser?.email || '') || hasDeviceLock(nextUser?.email || '');
+    setDeviceLocked(needsDevice);
+    setUser(needsDevice ? null : nextUser);
+    api.post('/api/profile', {}).catch(() => {});
   }
 
-  async function signIn(email?: string) {
-    if (authBusy) return;
-    const emailValue = String(email || '').trim().toLowerCase();
-    if (!emailValue) {
-      setToast('مهرباني وکړئ ایمیل ولیکئ.');
-      return;
-    }
-
-    setAuthBusy(true);
+  async function signIn() {
     try {
-      const result = await auth.signIn(emailValue);
-      if (result?.user) {
-        handleAuthenticatedUser(result.user);
-      } else {
-        setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. لینک خلاص کړئ؛ بیا به یوازې د همدې موبایل Fingerprint/PIN تصدیق وغواړي.');
-      }
+      const result = await auth.signIn({ scope: 'openid email profile offline_access' });
+      handleAuthenticatedUser(result.user);
     } catch (e: any) {
       const code = e?.code;
-      const status = e?.status;
-      if (code === 'over_email_send_rate_limit') {
-        setToast('د Supabase ایمیل د لېږلو حد پوره شوی. نوی لینک اوس نه شي لېږل کېدای.');
-      } else if (code === 'over_request_rate_limit' || status === 429) {
-        setToast('د ننوتلو غوښتنو حد پوره شوی. وروسته بیا یو ځل هڅه وکړئ.');
-      } else if (code === 'otp_disabled') {
-        setToast('د ایمیل Login په Supabase کې فعال نه دی.');
-      } else if (code === 'email_address_not_authorized') {
-        setToast('دا ایمیل د اوسني Email Provider له خوا اجازه نه لري.');
-      } else {
-        setToast(e?.message || ('د ننوتلو ستونزه: ' + (code || 'نامعلومه تېروتنه')));
-      }
-    } finally {
-      setAuthBusy(false);
+      setToast(
+        code === 'popup_blocked'
+          ? 'د ایمیل ننوتلو کړکۍ بنده ده؛ د براوزر Pop-up اجازه ورکړئ.'
+          : code === 'popup_closed'
+            ? 'د ننوتلو کړکۍ له بشپړېدو مخکې بنده شوه.'
+            : code === 'auth_error'
+              ? 'د ایمیل تصدیق ناکام شو؛ بیا هڅه وکړئ.'
+              : `د ننوتلو ستونزه: ${code || 'نامعلومه تېروتنه'}`
+      );
     }
   }
 
@@ -1113,8 +1323,7 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
   );
 }
 
-function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
-  const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
+function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
   return (
     <div className="login-page">
       <div className="login-glow" />
@@ -1128,28 +1337,9 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
         <h1>{t.login}</h1>
         <h2>{t.app}</h2>
         <p>{t.access}</p>
-        <label className="login-email-field">
-          {t.email}
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && email.trim() && !authBusy) onSignIn(email.trim());
-            }}
-            placeholder="name@example.com"
-            autoComplete="email"
-            inputMode="email"
-            dir="ltr"
-          />
-        </label>
-        <button
-          className="primary big"
-          onClick={() => onSignIn(email.trim())}
-          disabled={!email.trim() || authBusy}
-        >
+        <button className="primary big" onClick={onSignIn}>
           <span>✉</span>
-          {authBusy ? 'لېږل کېږي...' : t.email}
+          {t.email}
         </button>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
@@ -1236,157 +1426,107 @@ function HomePage({ t, people, totals, onGo }: any) {
 function OfflineSalaryHome() {
   return (
     <div className="offline-shell">
-      <div className="offline-card">
-        <WalletCards size={44} />
-        <div className="eyebrow">OFFLINE • د معاشاتو معلومات</div>
-        <h1>د معاشاتو معلومات</h1>
-        <p>انټرنېټ نشته. د معاش محاسبه لا هم په همدې موبایل کې کار کوي.</p>
-        <SalaryInfoPage />
-      </div>
+      <SalaryInfoPage />
     </div>
   );
 }
 
 function SalaryInfoPage() {
-  const saved = (() => {
-    try { return JSON.parse(localStorage.getItem('finance_salary_info_draft') || '{}'); } catch { return {}; }
-  })();
-  const [sector, setSector] = useState(saved.sector || 'security');
-  const [institution, setInstitution] = useState(saved.institution || 'د ملي دفاع وزارت');
-  const [name, setName] = useState(saved.name || '');
-  const [employeeNo, setEmployeeNo] = useState(saved.employeeNo || '');
-  const [rank, setRank] = useState(saved.rank || PUBLISHED_MILITARY_SALARIES_1405_TABLE[0]?.[0] || '');
-  const [civilianRank, setCivilianRank] = useState(saved.civilianRank || CIVILIAN_VISIBLE_1405_TABLE[0]?.grade || '');
-  const [serviceYears, setServiceYears] = useState(saved.serviceYears || '');
-  const [educationLevel, setEducationLevel] = useState(saved.educationLevel || '');
-  const [educationAllowance, setEducationAllowance] = useState(saved.educationAllowance || '0');
-  const [feedingAllowance, setFeedingAllowance] = useState(saved.feedingAllowance || '0');
-  const [otherAllowance, setOtherAllowance] = useState(saved.otherAllowance || '0');
-  const [month, setMonth] = useState(saved.month || new Date().toISOString().slice(0, 7));
-  const [absenceDays, setAbsenceDays] = useState(saved.absenceDays || '0');
-  const [periodMonths, setPeriodMonths] = useState(saved.periodMonths || '1');
-  const [dailyBasis, setDailyBasis] = useState(saved.dailyBasis || '30');
-  const selectedMilitary = PUBLISHED_MILITARY_SALARIES_1405_TABLE.find(x => x[0] === rank) || PUBLISHED_MILITARY_SALARIES_1405_TABLE[0];
-  const selectedCivilian = CIVILIAN_VISIBLE_1405_TABLE.find(x => x.grade === civilianRank) || CIVILIAN_VISIBLE_1405_TABLE[0];
-  const standardNetSalary = sector === 'security' ? (selectedMilitary?.[1] || 0) : (selectedCivilian?.amount || 0);
-  const years = num(serviceYears);
-  const serviceAllowance = serviceTenureAllowance(years);
-  const educationAmount = num(educationAllowance);
-  const feeding = num(feedingAllowance);
-  const other = num(otherAllowance);
-  const gross = roundMoney(standardNetSalary + serviceAllowance + educationAmount + feeding + other);
-  const basisDays = Math.min(31, Math.max(1, Math.floor(num(dailyBasis) || 30)));
-  const absent = Math.min(basisDays, Math.max(0, Math.floor(num(absenceDays) || 0)));
-  const absenceDeduction = roundMoney((gross / basisDays) * absent);
-  const payableGross = roundMoney(Math.max(0, gross - absenceDeduction));
-  const taxableSalary = standardNetSalary;
-  const totalAllowances = roundMoney(serviceAllowance + educationAmount + feeding + other);
-  const tax = salaryTaxByInstitution(taxableSalary, institution);
-  const payableTax = salaryTaxByInstitution(Math.max(0, standardNetSalary - roundMoney((standardNetSalary / basisDays) * absent)), institution);
-  const net = roundMoney(standardNetSalary - tax + totalAllowances);
-  const payableNet = roundMoney(payableGross - payableTax);
-  const months = Math.min(24, Math.max(1, Math.floor(num(periodMonths) || 1)));
-  const periodGross = roundMoney(gross * months);
-  const periodTax = roundMoney(tax * months);
-  const periodNet = roundMoney(net * months);
-  const periodPayableGross = roundMoney(payableGross * months);
-  const periodPayableTax = roundMoney(payableTax * months);
-  const periodPayableNet = roundMoney(payableNet * months);
-  const periodAbsenceDeduction = roundMoney(absenceDeduction * months);
-  const draft = { sector, institution, name, employeeNo, rank, civilianRank, serviceYears, educationLevel, educationAllowance, feedingAllowance, otherAllowance, month, absenceDays, periodMonths, dailyBasis };
+  const saved=(()=>{try{return JSON.parse(localStorage.getItem('finance_salary_info_draft')||'{}')}catch{return {}}})();
+  const digits=(v:string)=>String(v||'').replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  const normMonth=(v:string)=>{const r=digits(v).replace('/','-');if(/^1405-\\d{2}$/.test(r))return r.slice(5);return /^\\d{1,2}$/.test(r)?r.padStart(2,'0'):'01';};
+  const current=getCurrentSolarYearMonth();
+  const [name,setName]=useState(saved.name||'');
+  const [employeeNo,setEmployeeNo]=useState(saved.employeeNo||'');
+  const [sector,setSector]=useState(saved.sector||'security');
+  const [institution,setInstitution]=useState(saved.institution||'د ملي دفاع وزارت');
+  const [financialYear,setFinancialYear]=useState(String(saved.financialYear||current.year));
+  const [month,setMonth]=useState(normMonth(saved.month||current.month));
+  const [calcDaysInput,setCalcDaysInput]=useState(saved.calcDaysInput??'');
+  const [rank,setRank]=useState(saved.rank||PUBLISHED_MILITARY_SALARIES_1405_TABLE[0]?.[0]||'');
+  const [civilianRank,setCivilianRank]=useState(saved.civilianRank||CIVILIAN_VISIBLE_1405_TABLE[0]?.grade||'');
+  const [educationLevel,setEducationLevel]=useState(saved.educationLevel||'');
+  const [extraProfessional,setExtraProfessional]=useState(saved.extraProfessional||'0');
+  const [attendanceStatus,setAttendanceStatus]=useState(saved.attendanceStatus||'حاضر');
+  const [attendanceDays,setAttendanceDays]=useState(saved.attendanceDays||'0');
+  const [serviceYears,setServiceYears]=useState(saved.serviceYears||'0');
 
-  useEffect(() => {
-    localStorage.setItem('finance_salary_info_draft', JSON.stringify(draft));
-  }, [sector, institution, name, employeeNo, rank, civilianRank, serviceYears, educationLevel, educationAllowance, feedingAllowance, otherAllowance, month, absenceDays, periodMonths, dailyBasis]);
+  const selectedMilitary=PUBLISHED_MILITARY_SALARIES_1405_TABLE.find(x=>x[0]===rank)||PUBLISHED_MILITARY_SALARIES_1405_TABLE[0];
+  const selectedCivilian=CIVILIAN_VISIBLE_1405_TABLE.find(x=>x.grade===civilianRank)||CIVILIAN_VISIBLE_1405_TABLE[0];
+  const standardSalary=sector==='security'?(selectedMilitary?.[1]||0):(selectedCivilian?.amount||0);
+  const selectedYearNumber=Math.max(1,Math.floor(Number(digits(financialYear))||Number(current.year)||1405));
+  const monthNumber=Math.min(12,Math.max(1,Number(month)||1));
+  const monthDays=solarMonthDaysForYear(selectedYearNumber,monthNumber);
+  const parsedDays=Number(digits(calcDaysInput));
+  const totalCalcDays=calcDaysInput.trim()===''?monthDays:Math.max(1,Math.floor(Number.isFinite(parsedDays)?parsedDays:monthDays));
+  const serviceAllowance=serviceTenureAllowance(Number(serviceYears)||0);
+  const educationAllowance=EDUCATION_ALLOWANCES_1405[educationLevel]||0;
+  const professionalAllowance=Math.max(0,num(extraProfessional));
+  const exceptionDays=attendanceStatus==='حاضر'?0:Math.min(totalCalcDays,Math.max(0,Math.floor(Number(digits(attendanceDays))||0)));
+  const periods=buildSolarPeriods(selectedYearNumber,monthNumber,totalCalcDays);
+  let remainingExceptionDays=exceptionDays;
+  const monthlyBreakdown=periods.map(period=>{
+    const monthExceptionDays=attendanceStatus==='حاضر'?0:Math.min(remainingExceptionDays,period.days);
+    remainingExceptionDays=Math.max(0,remainingExceptionDays-monthExceptionDays);
+    const paidDays=attendanceStatus==='غیرحاضر'?Math.max(0,period.days-monthExceptionDays):period.days;
+    const ratio=paidDays/period.monthDays;
+    const base=roundMoney(standardSalary*ratio);
+    const service=roundMoney(serviceAllowance*ratio);
+    const education=roundMoney(educationAllowance*ratio);
+    const professional=roundMoney(professionalAllowance*ratio);
+    const feedingDaysForPeriod=attendanceStatus==='حاضر'?period.days:Math.max(0,period.days-monthExceptionDays);
+    const feeding=roundMoney(feedingDaysForPeriod*DAILY_FEEDING_ALLOWANCE);
+    const totalBeforeTax=roundMoney(Math.max(0,base+service+education+professional+feeding));
+    const tax=totalBeforeTax<=10000?0:totalBeforeTax<=100000?roundMoney((totalBeforeTax-10000)*0.10):roundMoney(9000+(totalBeforeTax-100000)*0.15);
+    return {...period,monthExceptionDays,paidDays,base,service,education,professional,feeding,feedingDays:feedingDaysForPeriod,totalBeforeTax,tax,netBeforeBank:roundMoney(totalBeforeTax-tax)};
+  });
+  const totals=monthlyBreakdown.reduce((a,r)=>({base:roundMoney(a.base+r.base),service:roundMoney(a.service+r.service),education:roundMoney(a.education+r.education),professional:roundMoney(a.professional+r.professional),feeding:roundMoney(a.feeding+r.feeding),totalBeforeTax:roundMoney(a.totalBeforeTax+r.totalBeforeTax),tax:roundMoney(a.tax+r.tax)}),{base:0,service:0,education:0,professional:0,feeding:0,totalBeforeTax:0,tax:0});
+  const bankSalaryDeduction=BANK_SALARY_TRANSFER_DEDUCTION;
+  const finalNet=roundMoney(Math.max(0,totals.totalBeforeTax-totals.tax-bankSalaryDeduction));
+  const fullMonths=monthlyBreakdown.filter(r=>r.days===r.monthDays).length;
+  const last=monthlyBreakdown[monthlyBreakdown.length-1];
+  const remainingDays=last&&last.days<last.monthDays?last.days:0;
+  const durationText=fullMonths&&remainingDays?(activeUiLang==='en'?fullMonths+' month(s) and '+remainingDays+' day(s)':activeUiLang==='fa'?fullMonths+' ماه و '+remainingDays+' روز':activeUiLang==='ar'?fullMonths+' شهر و '+remainingDays+' يوم':activeUiLang==='ur'?fullMonths+' ماہ اور '+remainingDays+' دن':toFaDigits(fullMonths)+' میاشت او '+toFaDigits(remainingDays)+' ورځې'):fullMonths?(activeUiLang==='en'?fullMonths+' month(s)':activeUiLang==='fa'?fullMonths+' ماه':activeUiLang==='ar'?fullMonths+' شهر':activeUiLang==='ur'?fullMonths+' ماہ':toFaDigits(fullMonths)+' میاشتې'):(activeUiLang==='en'?totalCalcDays+' day(s)':activeUiLang==='fa'?totalCalcDays+' روز':activeUiLang==='ar'?totalCalcDays+' يوم':activeUiLang==='ur'?totalCalcDays+' دن':toFaDigits(totalCalcDays)+' ورځې');
+  const periodDetailText=monthlyBreakdown.map(r=>translateStatic(r.monthName,activeUiLang)+' '+toFaDigits(r.year)+': '+translateStatic('د لومړۍ ورځې څخه تر وروستۍ ورځې پورې',activeUiLang)+' ('+toFaDigits(1)+'–'+toFaDigits(r.days)+') — '+toFaDigits(r.days)+'/'+toFaDigits(r.monthDays)+' '+translateStatic('ورځې',activeUiLang)).join('؛ ');
+  const draft={name,employeeNo,sector,institution,financialYear,month,calcDaysInput,rank,civilianRank,educationLevel,extraProfessional,attendanceStatus,attendanceDays:String(exceptionDays),serviceYears};
 
-  return (
-    <Panel title="معاشاتو معلومات">
-      <div className="salary-info-hero">
-        <div><div className="eyebrow"><span className="live-dot" /> آفلاین محاسبوي برخه</div><h2>د کارکوونکي د معاش بشپړه محاسبه</h2><p>نوم، بست، خدمت، تحصیل، اعاشه، غیرحاضري او نور منظور شوي ارقام داخل کړئ.</p></div>
-        <WalletCards size={52} />
-      </div>
-      <div className="salary-info-grid">
-        <label>نوم<input className="big-field" value={name} onChange={e => setName(e.target.value)} placeholder="لکه: احمد" /></label>
-        <label>کارکوونکي نمبر<input className="big-field" value={employeeNo} onChange={e => setEmployeeNo(e.target.value)} /></label>
-        <label>سکتور<select className="big-field" value={sector} onChange={e => setSector(e.target.value)}><option value="security">نظامي / امنیتي</option><option value="civilian">ملکي</option></select></label>
-        <label>وزارت / اداره<select className="big-field" value={institution} onChange={e => setInstitution(e.target.value)}><option>د ملي دفاع وزارت</option><option>د کورنیو چارو وزارت</option><option>د استخباراتو لوی ریاست</option><option>نور نظامي تشکیلات لرونکی امارتي واحد</option><option>ملکي وزارت / امارتي اداره</option></select></label>
-        {sector === 'security' ? <label>بست / رتبه<select className="big-field" value={rank} onChange={e => setRank(e.target.value)}>{PUBLISHED_MILITARY_SALARIES_1405_TABLE.map(x => <option key={x[0]} value={x[0]}>{x[0]} — خالص {money(x[1])}</option>)}</select></label> : <label>ملکي بست<select className="big-field" value={civilianRank} onChange={e => setCivilianRank(e.target.value)}>{CIVILIAN_VISIBLE_1405_TABLE.map(x => <option key={x.grade} value={x.grade}>{x.grade} — {x.step} — خالص {money(x.amount)}</option>)}</select></label>}
-        <label>د خدمت موده (کلونه)<input className="big-field" type="number" min="0" value={serviceYears} onChange={e => setServiceYears(e.target.value)} /></label>
-        <label>تحصیلي سند<select className="big-field" value={educationLevel} onChange={e => setEducationLevel(e.target.value)}><option value="">نه دی ټاکل شوی</option><option>لیسانس</option><option>ماستر</option><option>دوکتور</option><option>بل منظور سند</option></select></label>
-        <label>د تحصیلي امتیاز منظور شوی رقم<input className="big-field" type="number" min="0" value={educationAllowance} onChange={e => setEducationAllowance(e.target.value)} placeholder="د حکم/سند رقم" /></label>
-        <label>اعاشه / خوردګي<input className="big-field" type="number" min="0" value={feedingAllowance} onChange={e => setFeedingAllowance(e.target.value)} placeholder="لکه: 4050" /></label>
-        <label>نور منظور امتیاز<input className="big-field" type="number" min="0" value={otherAllowance} onChange={e => setOtherAllowance(e.target.value)} /></label>
-        <label>میاشت<input className="big-field" type="month" value={month} onChange={e => setMonth(e.target.value)} /></label>
-        <label>د غیرحاضرۍ د ورځې محاسبوي اساس<input className="big-field" type="number" min="1" max="31" value={dailyBasis} onChange={e => setDailyBasis(e.target.value)} /><small>دا د ریاضي محاسبې اساس دی؛ د ادارې منظور رسمي divisor که بل وي، همدلته بدل کړئ.</small></label>
-        <label>غیرحاضري ورځې<input className="big-field" type="number" min="0" max={basisDays} value={absenceDays} onChange={e => setAbsenceDays(e.target.value)} /></label>
-        <label>څو میاشتې؟<input className="big-field" type="number" min="1" max="24" value={periodMonths} onChange={e => setPeriodMonths(e.target.value)} /></label>
-      </div>
-      <div className="salary-info-steps">
-        <div className="salary-info-card salary-base"><span>خالص معیاري معاش</span><b>{money(standardNetSalary)}</b><small>ستاسې ورکړل شوی دقیق نورم</small></div>
-        <div className="salary-info-card salary-service"><span>د خدمت امتیاز</span><b>{money(serviceAllowance)}</b><small>{serviceAllowance ? 'د خدمت مودې جدول' : 'تر ۳ کلونو کم'}</small></div>
-        <div className="salary-info-card salary-edu"><span>تحصیلي امتیاز</span><b>{money(educationAmount)}</b><small>{educationLevel || 'رقم نه دی ثبت شوی'}</small></div>
-        <div className="salary-info-card salary-food"><span>اعاشه / خوردګي</span><b>{money(feeding)}</b></div>
-      </div>
-      <div className="salary-results-grid">
-        <div className="salary-result-card full"><span>مکمل میاشتنی معاش مخکې له مالیې</span><b>{money(gross)} افغانۍ</b></div>
-        <div className="salary-result-card tax"><span>میاشتنۍ مالیه</span><b>{money(tax)} افغانۍ</b></div>
-        <div className="salary-result-card net"><span>له مالیې وروسته معاش</span><b>{money(net)} افغانۍ</b></div>
-        <div className="salary-result-card absence"><span>د {absent} ورځو غیرحاضرۍ کسر</span><b>{money(absenceDeduction)} افغانۍ</b></div>
-        <div className="salary-result-card payable"><span>له غیرحاضرۍ وروسته ناخالص مستحق معاش</span><b>{money(payableGross)} افغانۍ</b></div>
-        <div className="salary-result-card payable"><span>له غیرحاضرۍ وروسته مالیه</span><b>{money(payableTax)} افغانۍ</b></div>
-        <div className="salary-result-card net"><span>له غیرحاضرۍ وروسته خالص مستحق معاش</span><b>{money(payableNet)} افغانۍ</b></div>
-      </div>
-      <div className="period-card">
-        <h3>د څو میاشتو اتومات مجموعه</h3>
-        <div className="salary-results-grid period">
-          <div className="salary-result-card full"><span>د {months} میاشتو مکمل معاش</span><b>{money(periodGross)} افغانۍ</b></div>
-          <div className="salary-result-card tax"><span>د {months} میاشتو ټول مالیه</span><b>{money(periodTax)} افغانۍ</b></div>
-          <div className="salary-result-card net"><span>د {months} میاشتو خالص معاش</span><b>{money(periodNet)} افغانۍ</b></div>
-        </div>
-      </div>
-      <div className="salary-summary-card">
-        <div className="salary-summary-head">
-          <div>
-            <div className="eyebrow">د معاش ټولې پایلې</div>
-            <h3>اتومات او واضح د محاسبې جدول</h3>
-            <p>ټول امتیازات، له مالیې مخکې معاش، مالیه، له مالیې وروسته معاش، غیرحاضري او د {months} میاشتو مجموعه په یوه جدول کې.</p>
-          </div>
-          <Calculator size={30} />
-        </div>
-        <div className="table-wrap salary-summary-wrap">
-          <table className="salary-summary-table">
-            <thead>
-              <tr>
-                <th>د حساب برخه</th>
-                <th>میاشتنی رقم</th>
-                <th>د {months} میاشتو رقم</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td>خالص معیاري معاش — ستاسې نورم</td><td>{money(standardNetSalary)}</td><td>{money(standardNetSalary * months)}</td></tr>
-              <tr><td>د خدمت امتیاز</td><td>{money(serviceAllowance)}</td><td>{money(serviceAllowance * months)}</td></tr>
-              <tr><td>تحصیلي امتیاز</td><td>{money(educationAmount)}</td><td>{money(educationAmount * months)}</td></tr>
-              <tr><td>اعاشه / خوردګي</td><td>{money(feeding)}</td><td>{money(feeding * months)}</td></tr>
-              <tr><td>نور منظور امتیاز</td><td>{money(other)}</td><td>{money(other * months)}</td></tr>
-              <tr className="summary-total"><td>ټول امتیازات</td><td>{money(totalAllowances)}</td><td>{money(totalAllowances * months)}</td></tr>
-              <tr className="summary-gross"><td>ټول معاش — له مالیې مخکې</td><td>{money(gross)}</td><td>{money(periodGross)}</td></tr>
-              <tr className="summary-tax"><td>ټوله مالیه</td><td>{money(tax)}</td><td>{money(periodTax)}</td></tr>
-              <tr className="summary-net"><td>له مالیې وروسته ټول معاش</td><td>{money(net)}</td><td>{money(periodNet)}</td></tr>
-              <tr className="summary-absence"><td>د {absent} ورځو غیرحاضرۍ کسر</td><td>{money(absenceDeduction)}</td><td>{money(periodAbsenceDeduction)}</td></tr>
-              <tr><td>له غیرحاضرۍ وروسته ناخالص مستحق معاش</td><td>{money(payableGross)}</td><td>{money(periodPayableGross)}</td></tr>
-              <tr className="summary-tax"><td>له غیرحاضرۍ وروسته مالیه</td><td>{money(payableTax)}</td><td>{money(periodPayableTax)}</td></tr>
-              <tr className="summary-net"><td>له غیرحاضرۍ وروسته خالص مستحق معاش</td><td>{money(payableNet)}</td><td>{money(periodPayableNet)}</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <div className="salary-summary-foot">یادونه: د غیرحاضرۍ کسر د پورته ټاکل شوي محاسبوي اساس ({basisDays} ورځې) له مخې حساب شوی؛ دا شمېره د ادارې منظور divisor سره بدلېدای شي.</div>
-      </div>
-      <div className="notice warn salary-info-note"><ShieldCheck size={18} /><span>د ملي دفاع وزارت پروفایل: تر ۱۰,۰۰۰ معاف؛ ۱۰,۰۰۱ تر ۱۰۰,۰۰۰ لس سلنه؛ له ۱۰۰,۰۰۰ پورته پنځلس سلنه. دا ځانګړی پروفایل د کاروونکي ورکړی نورم دی، نه د عامه رسمي سند ادعا. د تحصیلي او نورو امتیازونو رقم یوازې د منظور سند له مخې داخل کړئ.</span></div>
-      <div className="notice ok salary-info-offline"><CheckCircle2 size={18} /><span>د دې برخې محاسبه او draft د انټرنېټ پرته په همدې موبایل کې کار کوي او ساتل کېږي.</span></div>
-    </Panel>
-  );
+  useEffect(()=>{const n=Number(digits(attendanceDays));const safe=attendanceStatus==='حاضر'?0:Math.min(totalCalcDays,Math.max(0,Math.floor(Number.isFinite(n)?n:0)));if(attendanceStatus==='حاضر'&&attendanceDays!=='0')setAttendanceDays('0');else if(attendanceStatus!=='حاضر'&&String(safe)!==String(n))setAttendanceDays(String(safe));},[attendanceStatus,attendanceDays,totalCalcDays]);
+  useEffect(()=>{localStorage.setItem('finance_salary_info_draft',JSON.stringify(draft));},[name,employeeNo,sector,institution,financialYear,month,calcDaysInput,rank,civilianRank,educationLevel,extraProfessional,attendanceStatus,attendanceDays,serviceYears]);
+
+  const salaryOptions=sector==='security'?PUBLISHED_MILITARY_SALARIES_1405_TABLE.map(x=><option key={x[0]} value={x[0]}>{translateStatic(x[0],activeUiLang)}</option>):CIVILIAN_VISIBLE_1405_TABLE.map(x=><option key={x.grade} value={x.grade}>{x.grade} — {x.step}</option>);
+  const yearOptions=Array.from({length:201},(_,i)=>1300+i);
+
+  return <Panel title={translateStatic('معاشاتو معلومات',activeUiLang)}>
+    <div className="offline-payroll-title"><WalletCards size={28}/><div><h2>{translateStatic('د معاشاتو آفلاین محاسبه',activeUiLang)}</h2><span>{translateStatic('مالی کال ۱۴۰۵ هـ.ش',activeUiLang)}: {toFaDigits(selectedYearNumber)} هـ.ش</span></div></div>
+    <div className="offline-payroll-grid">
+      <label>{translateStatic('۱ ـ د کارکوونکي شمېره',activeUiLang)}<input className="big-field" value={employeeNo} onChange={e=>setEmployeeNo(e.target.value)}/></label>
+      <label>{translateStatic('۲ ـ نوم',activeUiLang)}<input className="big-field" value={name} onChange={e=>setName(e.target.value)}/></label>
+      <label>{translateStatic('۳ ـ نظامي / ملکي',activeUiLang)}<select className="big-field" value={sector} onChange={e=>setSector(e.target.value)}><option value="security">{translateStatic('نظامي',activeUiLang)}</option><option value="civilian">{translateStatic('ملکي',activeUiLang)}</option></select></label>
+      <label>{translateStatic('۴ ـ اړوند وزارت / لوی ریاست',activeUiLang)}<select className="big-field" value={institution} onChange={e=>setInstitution(e.target.value)}><option value="د ملي دفاع وزارت">{translateStatic('د ملي دفاع وزارت',activeUiLang)}</option><option value="د کورنیو چارو وزارت">{translateStatic('د کورنیو چارو وزارت',activeUiLang)}</option><option value="د استخباراتو لوی ریاست">{translateStatic('د استخباراتو لوی ریاست',activeUiLang)}</option><option value="نور نظامي تشکیلات لرونکی امارتي واحد">{translateStatic('نور نظامي تشکیلات لرونکی امارتي واحد',activeUiLang)}</option><option value="ملکي وزارت / لوی ریاست">{translateStatic('ملکي وزارت / لوی ریاست',activeUiLang)}</option></select></label>
+      <label>{translateStatic('۵ ـ مالي کال',activeUiLang)}<select className="big-field" value={financialYear} onChange={e=>setFinancialYear(e.target.value)}>{yearOptions.map(y=><option key={y} value={String(y)}>{toFaDigits(y)} هـ.ش</option>)}</select></label>
+      <label>{translateStatic('۵ ـ میاشت',activeUiLang)}<select className="big-field" value={month} onChange={e=>setMonth(e.target.value)}>{SOLAR_MONTHS_1405.map(([m,n])=><option key={m} value={m}>{translateStatic(n,activeUiLang)} — {toFaDigits(selectedYearNumber)}/{m} — {toFaDigits(solarMonthDaysForYear(selectedYearNumber,m))} {translateStatic('ورځې',activeUiLang)}</option>)}</select></label>
+      <label>{translateStatic('د محاسبې ورځې',activeUiLang)}<input className="big-field" type="text" inputMode="numeric" placeholder={translateStatic('خالي پرېږدئ = ټوله میاشت',activeUiLang)} value={calcDaysInput} onChange={e=>setCalcDaysInput(e.target.value)}/><small>{translateStatic('د ټاکل شوې میاشتې ورځې',activeUiLang)}: {toFaDigits(monthDays)} — {translateStatic('د محاسبې موده',activeUiLang)}: {durationText}</small></label>
+      <label>{translateStatic('۶ ـ بست / رتبه',activeUiLang)}<select className="big-field" value={sector==='security'?rank:civilianRank} onChange={e=>sector==='security'?setRank(e.target.value):setCivilianRank(e.target.value)}>{salaryOptions}</select></label>
+      <label>{translateStatic('د بست مطابق معاش',activeUiLang)}<input className="big-field salary-auto-field" value={money(totals.base)} readOnly/></label>
+      <label>{translateStatic('۷ ـ تحصیلي سند',activeUiLang)}<select className="big-field" value={educationLevel} onChange={e=>setEducationLevel(e.target.value)}><option value="">{translateStatic('انتخاب کړئ',activeUiLang)}</option><option value="لیسانس">{translateStatic('لیسانس',activeUiLang)}</option><option value="ماستر">{translateStatic('ماستر',activeUiLang)}</option><option value="دوکتور">{translateStatic('دوکتور',activeUiLang)}</option></select></label>
+      <label>{translateStatic('د تحصیلي سند اتومات امتیاز',activeUiLang)}<input className="big-field salary-auto-field" value={money(totals.education)} readOnly/></label>
+      <label>{translateStatic('۸ ـ فوق العاده / مسلک امتیاز',activeUiLang)}<input className="big-field" type="number" min="0" value={extraProfessional} onChange={e=>setExtraProfessional(e.target.value)}/></label>
+      <label>{translateStatic('۹ ـ حاضر / رخصت / مریض / کورس کابل / غیرحاضر',activeUiLang)}<select className="big-field" value={attendanceStatus} onChange={e=>setAttendanceStatus(e.target.value)}><option value="حاضر">{translateStatic('حاضر',activeUiLang)}</option><option value="رخصت">{translateStatic('رخصت',activeUiLang)}</option><option value="مریض">{translateStatic('مریض',activeUiLang)}</option><option value="کورس کابل">{translateStatic('کورس کابل',activeUiLang)}</option><option value="غیرحاضر">{translateStatic('غیرحاضر',activeUiLang)}</option></select></label>
+      {attendanceStatus==='حاضر'?<label>{translateStatic('د حاضرۍ ورځې',activeUiLang)}<input className="big-field salary-auto-field" value={toFaDigits(totalCalcDays)} readOnly/></label>:<label>{attendanceStatus==='غیرحاضر'?translateStatic('د غیرحاضر ورځې',activeUiLang):translateStatic('د حاضرۍ ورځې',activeUiLang)}<input className="big-field" type="number" min="0" max={totalCalcDays} value={attendanceDays} onChange={e=>setAttendanceDays(e.target.value)}/></label>}
+      <label>{translateStatic('د خدمت موده (کلونه)',activeUiLang)}<input className="big-field" type="number" min="0" value={serviceYears} onChange={e=>setServiceYears(e.target.value)}/></label>
+      <label>{translateStatic('د خدمت مودې اتومات امتیاز',activeUiLang)}<input className="big-field salary-auto-field" value={money(totals.service)} readOnly/></label>
+      <label>{translateStatic('د یوې ورځې اعاشه',activeUiLang)}<input className="big-field salary-auto-field" value={money(DAILY_FEEDING_ALLOWANCE)} readOnly/></label>
+      <label>{translateStatic('د ټاکل شوې میاشتې اعاشه',activeUiLang)}<input className="big-field salary-auto-field" value={money(totals.feeding)} readOnly/></label>
+    </div>
+    <div className="notice ok"><ReceiptText size={19}/><span>{translateStatic('د محاسبې موده',activeUiLang)}: {durationText} — {periodDetailText}</span></div>
+    <div className="offline-payroll-table-wrap"><table className="offline-payroll-table"><thead><tr>
+      <th>{translateStatic('۱ ـ د کس شمېره',activeUiLang)}</th><th>{translateStatic('۲ ـ د کس نوم',activeUiLang)}</th><th>{translateStatic('۳ ـ بست / رتبه',activeUiLang)}</th><th>{translateStatic('۴ ـ د بست مطابق معاش',activeUiLang)}</th><th>{translateStatic('د لیکل شویو ورځو اعاشه',activeUiLang)}</th><th>{translateStatic('۶ ـ د خدمت مودې امتیاز',activeUiLang)}</th><th>{translateStatic('۷ ـ تحصیلي سند امتیاز',activeUiLang)}</th><th>{translateStatic('۸ ـ فوق العاده / مسلک امتیاز',activeUiLang)}</th><th>{translateStatic('۹ ـ د معاش، اعاشې او امتیازونو مکمل مجموعه',activeUiLang)}</th><th>{translateStatic('۱۰ ـ کسرات / مالیه',activeUiLang)}</th><th>{translateStatic('۱۱ ـ د معاش حواله کولو بانک کسر (۱۵۰ افغانۍ)',activeUiLang)}</th><th>{translateStatic('۱۲ ـ صافي پاتې رقم',activeUiLang)}</th>
+    </tr></thead><tbody><tr>
+      <td data-label={translateStatic('۱ ـ د کس شمېره',activeUiLang)}>{employeeNo||'—'}</td><td data-label={translateStatic('۲ ـ د کس نوم',activeUiLang)}>{name||'—'}</td><td data-label={translateStatic('۳ ـ بست / رتبه',activeUiLang)}>{translateStatic(sector==='security'?rank:civilianRank,activeUiLang)}</td><td data-label={translateStatic('۴ ـ د بست مطابق معاش',activeUiLang)}>{money(totals.base)}</td><td data-label={translateStatic('د لیکل شویو ورځو اعاشه',activeUiLang)}>{money(totals.feeding)}</td><td data-label={translateStatic('۶ ـ د خدمت مودې امتیاز',activeUiLang)}>{money(totals.service)}</td><td data-label={translateStatic('۷ ـ تحصیلي سند امتیاز',activeUiLang)}>{money(totals.education)}</td><td data-label={translateStatic('۸ ـ فوق العاده / مسلک امتیاز',activeUiLang)}>{money(totals.professional)}</td><td data-label={translateStatic('۹ ـ د معاش، اعاشې او امتیازونو مکمل مجموعه',activeUiLang)}>{money(totals.totalBeforeTax)}</td><td data-label={translateStatic('۱۰ ـ کسرات / مالیه',activeUiLang)}>{money(totals.tax)}</td><td data-label={translateStatic('۱۱ ـ د معاش حواله کولو بانک کسر (۱۵۰ افغانۍ)',activeUiLang)}>{money(bankSalaryDeduction)}</td><td data-label={translateStatic('۱۲ ـ صافي پاتې رقم',activeUiLang)}>{money(finalNet)}</td>
+    </tr></tbody></table></div>
+    <div className="salary-period-breakdown"><h3>{translateStatic('د میاشتو جلا جلا محاسبه',activeUiLang)}</h3><div className="offline-payroll-table-wrap"><table className="offline-payroll-table salary-period-table"><thead><tr><th>{translateStatic('میاشت',activeUiLang)}</th><th>{translateStatic('د محاسبې ورځې',activeUiLang)}</th><th>{translateStatic('د بست مطابق معاش',activeUiLang)}</th><th>{translateStatic('د معاش، اعاشې او امتیازونو مکمل مجموعه',activeUiLang)}</th><th>{translateStatic('کسرات / مالیه',activeUiLang)}</th><th>{translateStatic('صافي پاتې رقم',activeUiLang)}</th></tr></thead><tbody>{monthlyBreakdown.map(r=><tr key={r.year+'-'+r.month}><td data-label={translateStatic('میاشت',activeUiLang)}>{translateStatic(r.monthName,activeUiLang)} {toFaDigits(r.year)}/{String(r.month).padStart(2,'0')}</td><td data-label={translateStatic('د محاسبې ورځې',activeUiLang)}>{toFaDigits(r.days)} / {toFaDigits(r.monthDays)}</td><td data-label={translateStatic('د بست مطابق معاش',activeUiLang)}>{money(r.base)}</td><td data-label={translateStatic('د معاش، اعاشې او امتیازونو مکمل مجموعه',activeUiLang)}>{money(r.totalBeforeTax)}</td><td data-label={translateStatic('کسرات / مالیه',activeUiLang)}>{money(r.tax)}</td><td data-label={translateStatic('صافي پاتې رقم',activeUiLang)}>{money(r.netBeforeBank)}</td></tr>)}</tbody></table></div><div className="salary-summary-foot">{translateStatic('د هرې میاشتې مالیه جلا محاسبه شوې او وروسته د ټولو میاشتو مالیې سره جمع شوې ده.',activeUiLang)}</div></div>
+  </Panel>;
 }
-
 function Personnel({ t, people, refresh, toast, userEmail, isAdmin }: any) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -1512,13 +1652,13 @@ function Personnel({ t, people, refresh, toast, userEmail, isAdmin }: any) {
   const net = roundMoney(gross - totalDeductions);
 
   function openCreate() {
-    setEditId(null); setPersonId(''); setMonth(''); setInstitution('د ملي دفاع وزارت'); setX({ extraordinary: '0', otherDeductions: '0' }); setOpen(true);
+    setEditId(null); setPersonId(''); setMonth((() => { const parts = currentSolarDate().replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).split('/'); return `${parts[0]}-${parts[1]}`; })()); setInstitution('د ملي دفاع وزارت'); setX({ extraordinary: '0', otherDeductions: '0' }); setOpen(true);
   }
   function openEdit(record: Payroll) {
     const oldTax = num(record.taxAmount);
     const oldTotal = num(record.totalDeductions ?? record.fees);
     const preservedOther = record.otherDeductions !== undefined ? num(record.otherDeductions) : Math.max(0, roundMoney(oldTotal - oldTax));
-    setEditId(record.id); setPersonId(record.personId); setMonth(record.month); setInstitution(record.institution || 'د ملي دفاع وزارت'); setX({ extraordinary: String(record.extraordinaryAllowance ?? 0), otherDeductions: String(preservedOther) }); setOpen(true);
+    setEditId(record.id); setPersonId(record.personId); setMonth(/^1405-/.test(record.month) ? record.month : (() => { const s = formatSolarMonth(record.month).replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace('/', '-'); return s; })()); setInstitution(record.institution || 'د ملي دفاع وزارت'); setX({ extraordinary: String(record.extraordinaryAllowance ?? 0), otherDeductions: String(preservedOther) }); setOpen(true);
   }
 
   async function save(e: any) {
@@ -1544,11 +1684,11 @@ function Personnel({ t, people, refresh, toast, userEmail, isAdmin }: any) {
       <div className="table-wrap"><table><thead><tr><th>{t.name}</th><th>وزارت/اداره</th><th>{t.month}</th><th>{t.base}</th><th>{t.recurring}</th><th>{t.extraordinary}</th><th>مالیه</th><th>نور کسرات</th><th>ټول کسرات</th><th>{t.gross}</th><th>{t.net}</th>{isAdmin && <th>ایمیل مالک</th>}<th>کړنې</th></tr></thead>
       <tbody>{payroll.map((p: Payroll) => {
         const canManage = isAdmin || String(p.ownerEmail || '').toLowerCase() === String(userEmail || '').toLowerCase();
-        return <tr key={p.id}><td>{people.find((z: Person) => z.id === p.personId)?.name || p.personId}</td><td>{p.institution || 'د ملي دفاع وزارت'}</td><td>{p.month}</td><td>{money(p.baseSalary)}</td><td>{money(p.recurringAllowance)}</td><td>{money(p.extraordinaryAllowance)}</td><td>{money(p.taxAmount ?? salaryTaxByInstitution(p.taxableIncome ?? p.gross, p.institution || 'د ملي دفاع وزارت'))}</td><td>{money(p.otherDeductions ?? Math.max(0, (p.totalDeductions ?? p.fees) - (p.taxAmount ?? salaryTaxByInstitution(p.taxableIncome ?? p.gross, p.institution || 'د ملي دفاع وزارت'))))}</td><td>{money(p.totalDeductions ?? p.fees)}</td><td>{money(p.gross)}</td><td><b>{money(p.net)}</b></td>{isAdmin && <td>{p.ownerEmail || '—'}</td>}<td>{canManage ? <div className="table-actions"><button className="table-edit-btn" onClick={() => openEdit(p)}><Pencil size={15} /></button><button className="table-delete-btn" onClick={() => remove(p)}><Trash2 size={15} /></button></div> : <span>—</span>}</td></tr>;
+        return <tr key={p.id}><td>{people.find((z: Person) => z.id === p.personId)?.name || p.personId}</td><td>{p.institution || 'د ملي دفاع وزارت'}</td><td>{formatSolarMonth(p.month)}</td><td>{money(p.baseSalary)}</td><td>{money(p.recurringAllowance)}</td><td>{money(p.extraordinaryAllowance)}</td><td>{money(p.taxAmount ?? salaryTaxByInstitution(p.taxableIncome ?? p.gross, p.institution || 'د ملي دفاع وزارت'))}</td><td>{money(p.otherDeductions ?? Math.max(0, (p.totalDeductions ?? p.fees) - (p.taxAmount ?? salaryTaxByInstitution(p.taxableIncome ?? p.gross, p.institution || 'د ملي دفاع وزارت'))))}</td><td>{money(p.totalDeductions ?? p.fees)}</td><td>{money(p.gross)}</td><td><b>{money(p.net)}</b></td>{isAdmin && <td>{p.ownerEmail || '—'}</td>}<td>{canManage ? <div className="table-actions"><button className="table-edit-btn" onClick={() => openEdit(p)}><Pencil size={15} /></button><button className="table-delete-btn" onClick={() => remove(p)}><Trash2 size={15} /></button></div> : <span>—</span>}</td></tr>;
       })}{!payroll.length && <tr><td colSpan={isAdmin ? 13 : 12} className="empty">{t.noData}</td></tr>}</tbody></table></div>
       {open && <Modal title={editId ? 'د معاش سمون' : t.add} close={() => setOpen(false)}><form className="form-grid" onSubmit={save}>
         <label>{t.name}<select className="big-field" value={personId} onChange={e => setPersonId(e.target.value)} required><option value="">—</option>{people.map((p: Person) => <option value={p.id} key={p.id}>{p.name} — {p.rank}</option>)}</select></label>
-        <label>{t.month}<input className="big-field" type="month" value={month} onChange={e => setMonth(e.target.value)} required /></label>
+        <label>لمریز کال میاشت<select className="big-field" value={month} onChange={e => setMonth(e.target.value)} required><option value="">میاشت وټاکئ</option>{SOLAR_MONTHS_1405.map(([m,n]) => <option key={m} value={`1405-${m}`}>۱۴۰۵ / {m} — {n}</option>)}</select></label>
         <label>وزارت/اداره د مالیې پروفایل
           <select className="big-field" value={institution} onChange={e => setInstitution(e.target.value)}>
             <option>د ملي دفاع وزارت</option>
@@ -1569,17 +1709,19 @@ function Personnel({ t, people, refresh, toast, userEmail, isAdmin }: any) {
 }function Transactions({ t, tx, refresh, toast, userEmail, isAdmin }: any) {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const emptyForm = { description: '', type: 'expense', amount: '', category: '', date: new Date().toISOString().slice(0, 10), note: '', referenceNo: '' };
+  const emptyForm = { description: '', type: 'expense', amount: '', category: '', date: currentSolarDate(), note: '', referenceNo: '' };
   const [form, setForm] = useState<any>(emptyForm);
 
-  function openCreate() { setEditId(null); setForm({ ...emptyForm, date: new Date().toISOString().slice(0, 10) }); setOpen(true); }
-  function openEdit(record: Tx) { setEditId(record.id); setForm({ description: record.description, type: record.type, amount: String(record.amount), category: record.category, date: record.date, note: record.note || '', referenceNo: record.referenceNo || '' }); setOpen(true); }
+  function openCreate() { setEditId(null); setForm({ ...emptyForm, date: currentSolarDate() }); setOpen(true); }
+  function openEdit(record: Tx) { setEditId(record.id); setForm({ description: record.description, type: record.type, amount: String(record.amount), category: record.category, date: formatSolarDate(record.date), note: record.note || '', referenceNo: record.referenceNo || '' }); setOpen(true); }
 
   async function save(e: any) {
     e.preventDefault();
     if (!form.description || num(form.amount) <= 0) { toast('تشریح او له صفر څخه لوی مقدار اړین دی.'); return; }
     try {
-      const payload = { ...form, amount: num(form.amount), referenceNo: String(form.referenceNo || '').trim() };
+      const gregorianDate = solar1405ToGregorianISO(form.date);
+      if (!gregorianDate) { toast('یوازې د ۱۴۰۵ لمریز کال سمه نېټه داخل کړئ؛ مثال: ۱۴۰۵/۰۷/۰۸'); return; }
+      const payload = { ...form, date: gregorianDate, amount: num(form.amount), referenceNo: String(form.referenceNo || '').trim() };
       if (editId) await api.put(`/api/transactions/${editId}`, payload);
       else await api.post('/api/transactions', payload);
       setOpen(false); setEditId(null); await refresh(); toast(editId ? 'مالي ثبت سم شو.' : 'مالي ثبت په بریالیتوب خوندي شو.');
@@ -1596,13 +1738,13 @@ function Personnel({ t, people, refresh, toast, userEmail, isAdmin }: any) {
   return (
     <Panel title={t.transactions} action={<button className="primary" onClick={openCreate}><Plus size={17} />{t.add}</button>}>
       <div className="table-wrap"><table><thead><tr><th>{t.date}</th><th>د سند/حوالې شمېره</th><th>{t.description}</th><th>{t.category}</th><th>{t.income}/{t.expense}</th><th>{t.amount}</th>{isAdmin && <th>ایمیل مالک</th>}<th>کړنې</th></tr></thead>
-      <tbody>{tx.map((record: Tx) => { const canManage = isAdmin || String(record.ownerEmail || '').toLowerCase() === String(userEmail || '').toLowerCase(); return <tr key={record.id}><td>{record.date}</td><td>{record.referenceNo || '—'}</td><td>{record.description}</td><td>{record.category}</td><td><span className={'pill ' + record.type}>{record.type === 'income' ? t.income : t.expense}</span></td><td>{money(record.amount)}</td>{isAdmin && <td>{record.ownerEmail || '—'}</td>}<td>{canManage ? <div className="table-actions"><button className="table-edit-btn" onClick={() => openEdit(record)}><Pencil size={15} /></button><button className="table-delete-btn" onClick={() => remove(record)}><Trash2 size={15} /></button></div> : <span>—</span>}</td></tr>; })}{!tx.length && <tr><td colSpan={isAdmin ? 8 : 7} className="empty">{t.noData}</td></tr>}</tbody></table></div>
+      <tbody>{tx.map((record: Tx) => { const canManage = isAdmin || String(record.ownerEmail || '').toLowerCase() === String(userEmail || '').toLowerCase(); return <tr key={record.id}><td>{formatSolarDate(record.date)}</td><td>{record.referenceNo || '—'}</td><td>{record.description}</td><td>{record.category}</td><td><span className={'pill ' + record.type}>{record.type === 'income' ? t.income : t.expense}</span></td><td>{money(record.amount)}</td>{isAdmin && <td>{record.ownerEmail || '—'}</td>}<td>{canManage ? <div className="table-actions"><button className="table-edit-btn" onClick={() => openEdit(record)}><Pencil size={15} /></button><button className="table-delete-btn" onClick={() => remove(record)}><Trash2 size={15} /></button></div> : <span>—</span>}</td></tr>; })}{!tx.length && <tr><td colSpan={isAdmin ? 8 : 7} className="empty">{t.noData}</td></tr>}</tbody></table></div>
       {open && <Modal title={editId ? 'د مالي ثبت سمون' : t.add} close={() => setOpen(false)}><form className="form-grid" onSubmit={save}>
         <label>{t.description}<input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required /></label>
         <label>{t.category}<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label>
         <label>د سند/حوالې شمېره<input value={form.referenceNo} onChange={e => setForm({ ...form, referenceNo: e.target.value })} placeholder="لکه: ۱۴۰۵-۰۰۱" /></label>
         <label>{t.amount}<input type="number" min="0.01" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required /></label>
-        <label>{t.date}<input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required /></label>
+        <label>د سند لمریز تاریخ (۱۴۰۵)<input className="big-field" inputMode="numeric" placeholder="۱۴۰۵/۰۷/۰۸" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} required /><small>د Gregorian نېټې پر ځای دلته د ۱۴۰۵ لمریز تاریخ داخل کړئ.</small></label>
         <label>{t.income}/{t.expense}<select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option value="expense">{t.expense}</option><option value="income">{t.income}</option></select></label>
         <label>{t.description}<textarea value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></label>
         <div className="modal-actions"><button type="button" className="ghost" onClick={() => setOpen(false)}>{t.cancel}</button><button className="primary">{editId ? 'سمول' : t.save}</button></div>
@@ -1654,7 +1796,7 @@ function LedgerPage({ t, ledger }: any) {
           <thead><tr><th>نېټه</th><th>حساب</th><th>مراجعه</th><th>Debit</th><th>Credit</th><th>تشریح</th></tr></thead>
           <tbody>
             {ledger.map((x: LedgerEntry) => (
-              <tr key={x.id}><td>{x.date}</td><td>{x.account}</td><td>{x.reference}</td><td>{money(x.debit)}</td><td>{money(x.credit)}</td><td>{x.description}</td></tr>
+              <tr key={x.id}><td>{formatSolarDate(x.date)}</td><td>{x.account}</td><td>{x.reference}</td><td>{money(x.debit)}</td><td>{money(x.credit)}</td><td>{x.description}</td></tr>
             ))}
             {!ledger.length && <tr><td colSpan={6} className="empty">{t.noData}</td></tr>}
           </tbody>
@@ -1674,7 +1816,7 @@ function Reports({ t, people, payroll, tx, ledger }: any) {
   const reportText = [
     'د مالي مدیریت سیستم',
     'د مالي وضعیت رسمي راپور',
-    'بشپړېدلو نېټه: ۲۰۲۶/۰۹/۲۸',
+    'د راپور نېټه: ' + currentSolarDate(),
     'جوړونکی: حافظ محیب الله ایوب',
     'کارکوونکي: ' + people.length,
     'معاشونه: ' + money(payroll.reduce((s: number, x: Payroll) => s + x.net, 0)),
@@ -1697,7 +1839,7 @@ function Reports({ t, people, payroll, tx, ledger }: any) {
       <div className="report-cover">
         <div className="report-cover-brand"><MofLogo size={92} /></div>
         <div>
-          <div className="eyebrow">رسمي مالي راپور • نسخه ۲۰۲۶/۰۹/۲۸</div>
+          <div className="eyebrow">رسمي مالي راپور • ۱۴۰۵/۰۷</div>
           <h2>د مالي مدیریت سیستم</h2>
           <p>د ۲۰۵ البدر قول اردو د ۵۰۲ پیاده لواء مالي مدیریت</p>
           <small>جوړونکی: حافظ محیب الله ایوب</small>
@@ -1708,7 +1850,7 @@ function Reports({ t, people, payroll, tx, ledger }: any) {
         <button className="ghost" onClick={shareReport}><Globe2 size={17} /> راپور شریکول</button>
       </div>
       {status && <div className="notice ok">{status}</div>}
-      <div className="report-meta"><span>د راپور وخت</span><b>{now.toLocaleString('ps-AF')}</b><span>د توازن حالت</span><b>{Math.abs(debit-credit) < 0.01 ? 'برابر' : 'نا برابر'}</b></div>
+      <div className="report-meta"><span>د راپور وخت</span><b>{formatSolarDateTime(now)}</b><span>د توازن حالت</span><b>{Math.abs(debit-credit) < 0.01 ? 'برابر' : 'نا برابر'}</b></div>
       <div className="report-list">
         {[
           ['کارکوونکي', people.length],
@@ -1751,10 +1893,26 @@ const SERVICE_TENURE_ALLOWANCES = [
   { label: '۳ کاله او ډېر', amount: 200, years: 3 },
   { label: '۶ کاله او ډېر', amount: 500, years: 6 },
   { label: '۹ کاله او ډېر', amount: 800, years: 9 },
-  { label: '۱۲ کاله او ډېر', amount: 1000, years: 12 },
+  { label: '۱۲ کاله او ډېر', amount: 1100, years: 12 },
   { label: '۱۵ کاله او ډېر', amount: 1400, years: 15 },
   { label: '۱۸ کاله او ډېر', amount: 1700, years: 18 },
 ] as const;
+
+const EDUCATION_ALLOWANCES_1405: Record<string, number> = {
+  لیسانس: 450,
+  ماستر: 1100,
+  دوکتور: 2000,
+};
+
+const DAILY_FEEDING_ALLOWANCE = 150;
+const BANK_SALARY_TRANSFER_DEDUCTION = 150;
+
+function solarMonthDays1405(month: string) {
+  const m = Number(String(month || '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))));
+  if (m >= 1 && m <= 6) return 31;
+  if (m >= 7 && m <= 11) return 30;
+  return 29;
+}
 
 function serviceTenureAllowance(years: number) {
   const completedYears = Math.max(0, Number.isFinite(years) ? years : 0);
@@ -1776,6 +1934,19 @@ const LICENSED_BANKS: Array<[string, string, string, string]> = [
 ];
 
 const DEFENSE_TAX_PROFILE_LABEL = 'د ملي دفاع وزارت';
+
+function grossUpNetSalary(netAmount: number, institution: string) {
+  const targetNet = Math.max(0, roundMoney(netAmount));
+  if (institution === DEFENSE_TAX_PROFILE_LABEL) {
+    if (targetNet <= 10000) return targetNet;
+    if (targetNet <= 90000) return roundMoney(targetNet / 0.9);
+    return roundMoney(targetNet / 0.85);
+  }
+  if (targetNet <= 5000) return targetNet;
+  if (targetNet <= 12350) return roundMoney((targetNet - 100) / 0.98);
+  if (targetNet <= 91100) return roundMoney((targetNet - 1100) / 0.9);
+  return roundMoney((targetNet - 11100) / 0.8);
+}
 
 function generalSalaryWithholdingTaxMonthly(amount: number) {
   const taxable = Math.max(0, roundMoney(amount));
@@ -1824,7 +1995,8 @@ function SalaryRulesPage() {
   const selectedMilitary = PUBLISHED_MILITARY_SALARIES_1405_TABLE[militaryIndex];
   const civilianRef = CIVILIAN_VISIBLE_1405_TABLE[civilianIndex];
   const standardNetSalary = sector === 'security' ? (selectedMilitary?.[1] || 0) : (civilianRef?.amount || 0);
-  const baseSalary = standardNetSalary;
+  const grossEquivalentBase = grossUpNetSalary(standardNetSalary, institution);
+  const baseSalary = grossEquivalentBase;
   const educationAmount = num(education);
   const serviceAmount = serviceTenureAllowance(num(serviceYears));
   const fixedAllowances = [
@@ -1840,10 +2012,9 @@ function SalaryRulesPage() {
     num(travel),
     num(food),
   ].reduce((sum, value) => sum + value, 0);
-  const gross = roundMoney(baseSalary + fixedAllowances);
-  const taxable = Math.max(0, standardNetSalary);
-  const tax = salaryTaxByInstitution(taxable, institution);
-  const net = roundMoney(gross - tax);
+  const gross = roundMoney(grossEquivalentBase + fixedAllowances);
+  const tax = roundMoney(grossEquivalentBase - standardNetSalary);
+  const net = roundMoney(standardNetSalary + fixedAllowances);
   const months = Math.min(24, Math.max(1, Math.floor(num(periodMonths) || 1)));
   const periodGross = roundMoney(gross * months);
   const periodTax = roundMoney(tax * months);
@@ -1939,7 +2110,7 @@ function SalaryRulesPage() {
                   {PUBLISHED_MILITARY_SALARIES_1405_TABLE.map((x, i) => <option key={x[0]} value={i}>{x[0]}</option>)}
                 </select>
               </label>
-              <label>ټاکل شوی خالص معاش
+              <label>ټاکل شوی خالص معاش (۱۴۰۵ نورم)
                 <input value={money(selectedMilitary?.[1] || 0)} readOnly />
               </label>
             </div>
@@ -2004,7 +2175,7 @@ function SalaryRulesPage() {
       <div className="rules-section">
         <div className="rules-section-head"><div><h3>۴ ـ د معاش مالیه</h3><p>موضوعي مالیه د مالیې تابع میاشتني معاش پر بنسټ اتومات محاسبه کېږي. د څو میاشتو محاسبه د هرې میاشتې جلا حسابونه جمع کوي.</p></div></div>
         <div className="calc-box rules-calc">
-          <span>د مالیې تابع میاشتنی معاش</span><b>{money(taxable)}</b>
+          <span>د نورم د مالیې مخکې معادل معاش</span><b>{money(grossEquivalentBase)}</b>
           <span>موضوعي مالیه — ۱ میاشت</span><b>{money(tax)}</b>
           <span>له مالیې وروسته خالص — ۱ میاشت</span><b>{money(net)}</b>
         </div>
@@ -2012,11 +2183,7 @@ function SalaryRulesPage() {
           <label>څو میاشتې محاسبه؟
             <input className="big-field" type="number" min="1" max="24" value={periodMonths} onChange={e => setPeriodMonths(e.target.value)} />
           </label>
-          <div className="calc-box rules-calc">
-            <span>د {months} میاشتو ناخالص معاش</span><b>{money(periodGross)}</b>
-            <span>د {months} میاشتو ټول مالیه</span><b>{money(periodTax)}</b>
-            <span>د {months} میاشتو خالص معاش</span><b>{money(periodNet)}</b>
-          </div>
+          <div className="calc-box rules-calc"><span>د {months} میاشتو خالص معاش</span><b>{money(periodNet)}</b><span>د {months} میاشتو معلوماتي مالیه</span><b>{money(periodTax)}</b><span>د {months} میاشتو د مالیې مخکې معادل</span><b>{money(grossEquivalentBase * months)}</b></div>
         </div>
         <div className="notice ok"><CheckCircle2 size={19} /><span>د څو میاشتو مجموعه د مساوي میاشتني معاش لپاره د هرې میاشتې جلا مالیې د مجموعې په توګه محاسبه کېږي.</span></div>
         {institution === DEFENSE_TAX_PROFILE_LABEL ? (
@@ -2050,7 +2217,8 @@ function SalaryRulesPage() {
           <label>اکونټ نمبر
             <input value={accountNumber} onChange={e => setAccountNumber(e.target.value)} inputMode="numeric" placeholder="د بانک حساب نمبر" />
           </label>
-          <label>د حساب خاوند نوم            <input value={accountHolderName} onChange={e => setAccountHolderName(e.target.value)} placeholder="لکه: احمد خان" />
+          <label>د حساب خاوند نوم
+            <input value={accountHolderName} onChange={e => setAccountHolderName(e.target.value)} placeholder="لکه: احمد خان" />
           </label>
         </div>
         <div className={'bank-verification ' + (bankListed ? 'known' : '')}>
@@ -2150,7 +2318,7 @@ function Audit({ t }: any) {
           <div key={x.id}>
             <b>{x.action}</b>
             <span>{x.email}</span>
-            <small>{new Date(x.createdAt).toLocaleString()}</small>
+            <small>{formatSolarDateTime(x.createdAt)}</small>
           </div>
         ))}
         {!items.length && <div className="empty">{t.noData}</div>}
@@ -2182,6 +2350,7 @@ function SettingsPage({ t, lang, setLang, theme, setTheme, settings, setSettings
   const now = new Date();
   const fmt = (calendar: string, locale: string) => new Intl.DateTimeFormat(locale, { calendar, dateStyle: 'full' }).format(now);
   const dateRows = [
+    ['لمریز ۱۴۰۵', currentSolarDate()],
     settings.showGregorian && ['میلادي', fmt('gregory', 'ps-AF')],
     settings.showSolar && ['لمریز', fmt('persian', 'fa-AF')],
     settings.showHijri && ['هجري قمري', fmt('islamic', 'ar-AF')],

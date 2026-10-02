@@ -1136,7 +1136,36 @@ body[data-theme='light'] .about-me-grid > div { background:#f7fbf9; border-color
 }
 
 .salary-summary-wrap { overflow-x:hidden; overflow-y:visible; }
+.salary-info-card.salary-tax { border-color:rgba(255,180,84,.35); background:rgba(255,180,84,.07); }
+.salary-info-card.salary-tax b { color:#ffd08e; }
 
 .salary-info-steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-top:14px; }
 .salary-summary-table td:first-child { font-weight:700; }
 @media (max-width:760px) { .salary-info-steps { grid-template-columns:1fr 1fr; } .salary-info-steps .salary-info-card { min-width:0; } }
+
+.offline-payroll-title { display:flex; align-items:center; gap:10px; margin-bottom:14px; padding:12px 14px; border:1px solid rgba(98,215,244,.18); border-radius:14px; background:rgba(98,215,244,.045); }
+.offline-payroll-title svg { color:#62d7f4; flex:0 0 auto; }
+.offline-payroll-title h2 { margin:0 0 2px; font-size:20px; }
+.offline-payroll-title span { color:#8fa79c; font-size:12px; }
+.offline-payroll-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.offline-payroll-grid label { display:grid; gap:7px; color:#9db4aa; font-size:14px; line-height:1.5; }
+.offline-payroll-grid .big-field { font-size:16px !important; }
+.salary-auto-field { border-color:rgba(91,226,157,.3) !important; background:rgba(91,226,157,.06) !important; color:#b9f1d0 !important; font-weight:800; }
+.offline-payroll-table-wrap { width:100%; max-width:100%; overflow:hidden; margin-top:16px; border:1px solid rgba(98,215,244,.2); border-radius:14px; }
+.offline-payroll-table { width:100%; min-width:0 !important; table-layout:fixed; border-collapse:collapse; }
+.offline-payroll-table th, .offline-payroll-table td { border:1px solid #294238; padding:8px 5px; font-size:12px; line-height:1.45; overflow-wrap:anywhere; word-break:normal; vertical-align:middle; text-align:center; }
+.offline-payroll-table th { background:#102d23; color:#9cecff; font-weight:900; }
+.offline-payroll-table td { color:#e6f4ed; font-weight:700; }
+.offline-payroll-table th:nth-child(1), .offline-payroll-table td:nth-child(1) { width:7%; }.offline-payroll-table th:nth-child(2), .offline-payroll-table td:nth-child(2) { width:9%; }.offline-payroll-table th:nth-child(3), .offline-payroll-table td:nth-child(3) { width:9%; }.offline-payroll-table th:nth-child(4), .offline-payroll-table td:nth-child(4) { width:9%; }.offline-payroll-table th:nth-child(5), .offline-payroll-table td:nth-child(5) { width:9%; }.offline-payroll-table th:nth-child(6), .offline-payroll-table td:nth-child(6) { width:8%; }.offline-payroll-table th:nth-child(7), .offline-payroll-table td:nth-child(7) { width:8%; }.offline-payroll-table th:nth-child(8), .offline-payroll-table td:nth-child(8) { width:8%; }.offline-payroll-table th:nth-child(9), .offline-payroll-table td:nth-child(9) { width:11%; }.offline-payroll-table th:nth-child(10), .offline-payroll-table td:nth-child(10) { width:11%; }.offline-payroll-table th:nth-child(11), .offline-payroll-table td:nth-child(11) { width:10%; }.offline-payroll-table th:nth-child(12), .offline-payroll-table td:nth-child(12) { width:11%; }.offline-payroll-table td:nth-child(9), .offline-payroll-table td:nth-child(10), .offline-payroll-table td:nth-child(11), .offline-payroll-table td:nth-child(12) { font-weight:900; }
+@media (max-width:760px) {
+  .offline-payroll-grid { grid-template-columns:1fr; gap:11px; }
+  .offline-payroll-title h2 { font-size:18px; }
+  .offline-payroll-title span { font-size:11px; }
+  .offline-payroll-table-wrap { overflow:hidden !important; }
+  .offline-payroll-table thead { display:none; }
+  .offline-payroll-table tbody, .offline-payroll-table tr { display:block; width:100%; }
+  .offline-payroll-table tr { padding:4px; }
+  .offline-payroll-table td { display:flex; align-items:center; justify-content:space-between; gap:8px; width:100% !important; min-height:46px; padding:8px 9px; text-align:start; font-size:12px; }
+  .offline-payroll-table td::before { content:attr(data-label); flex:0 0 48%; color:#9cecff; font-size:11px; font-weight:900; line-height:1.45; }
+  .offline-payroll-table td { font-size:13px; }
+}

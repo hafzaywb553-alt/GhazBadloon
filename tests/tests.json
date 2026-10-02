@@ -1,43 +1,43 @@
 [
   {
-    "name": "Personnel records remain private to their owner and support full CRUD",
-    "sanity": true,
-    "viewport": "mobile",
-    "covers": ["personnel create", "database persistence", "owner-only edit/delete", "destructive confirmation", "large mobile form fields"],
-    "description": "Verifies a user can create, retain, edit, and delete only that user’s personnel records using readable mobile-sized fields.",
-    "steps": ["Sign in as User A", "Create a personnel record", "Refresh the app", "Edit the record", "Delete the record and confirm", "Refresh again"],
-    "expected": "The record survives refresh, edited values persist, the fields are usable on mobile, and confirmed deletion removes it."
+    "name":"Personnel records remain private to their owner and support full CRUD",
+    "sanity":true,
+    "viewport":"mobile",
+    "covers":["personnel create","database persistence","owner-only edit/delete"],
+    "description":"Verifies user-scoped personnel CRUD.",
+    "steps":["Sign in as User A","Create a personnel record","Refresh the app","Edit the record","Delete the record and confirm"],
+    "expected":"The record survives refresh, edits persist, mobile fields remain usable, and confirmed deletion removes only the owner record."
   },
   {
-    "name": "Salary tax uses only the salary norm and excludes allowances",
-    "viewport": "mobile",
-    "covers": ["salary information section", "exact supplied salary norms", "tax only on salary norm", "non-taxable feeding allowance", "non-taxable education allowance", "non-taxable other allowance", "exact service-tenure tiers", "absence-adjusted salary", "multi-month totals", "non-scrolling mobile salary summary table"],
-    "description": "Verifies tax is calculated only from the selected salary norm/base amount and does not increase when non-taxable allowances are added.",
-    "steps": ["Open Home and tap 'معاشاتو معلومات'", "Select a supplied military salary norm", "Add service, education, feeding and other allowances", "Review the tax amount", "Change an allowance while keeping the salary norm unchanged", "Review tax again", "Set absence days and review payable values", "Set 4 months and review the complete table", "Confirm the table stays within the mobile page width"],
-    "expected": "The tax amount depends only on the salary norm, allowances do not increase tax, the final salary includes the allowances, absence and multi-month totals calculate automatically, and the summary table fits the mobile viewport."
+    "name":"Offline 1405 salary calculation follows rank, education, service, attendance and tax rules",
+    "viewport":"mobile",
+    "covers":["offline salary form","1405 month day counts","exact military salary norms","automatic education allowance","service allowance","attendance categories","feeding allowance","absence deductions","tax thresholds","150 AFN bank transfer deduction","twelve-column calculation table","mobile no-horizontal-scroll"],
+    "description":"Verifies the offline payroll calculator uses the requested 1405 Solar calendar, exact supplied rank salaries, automatic allowance rules, attendance-specific deductions, and the fixed 150 AFN bank salary-transfer deduction.",
+    "steps":["Open 'معاشاتو معلومات' while offline","Select مالي کال ۱۴۰۵, choose حمل and verify 31 days, then میزان 30 days and حوت 29 days","Choose نظامي and select جګړن / سمونیار and verify the automatic salary is 16150","Choose ماستر and verify the automatic education allowance is 1100","Enter 12 service years and verify the automatic service allowance is 1100","Keep حاضر selected and verify feeding allowance is 150 multiplied by every day of the selected month","Choose رخصت and enter 5 days, then verify only 5 days of feeding are removed","Choose غیرحاضر and enter 5 days, then verify 5 days of salary and all allowances are removed proportionally","Verify the first 10000 is exempt, only the excess up to 100000 is taxed at 10%, and the excess above 100000 is taxed progressively at 15%","Verify the table shows a separate 150 AFN bank transfer deduction immediately after tax and the final net amount subtracts both tax and the bank deduction","Verify the complete calculation appears without horizontal page/table scrolling on mobile"],
+    "expected":"Month lengths are automatic for 1405; rank selection immediately supplies the exact salary; education and service allowances are automatic; leave/sick/course Kabul reduce only feeding for their written days; nonattendance reduces salary and all allowances for those days; tax follows 0%, 10% and 15% thresholds; the twelve requested table columns remain fully usable on a mobile screen, with the 150 AFN bank transfer deduction in column 11 immediately after tax and before the final net amount."
   },
   {
-    "name": "Persistent sign-in exit locks the device without signing out",
-    "viewport": "mobile",
-    "covers": ["persistent sign-in after system exit", "automatic device fingerprint/PIN setup", "device fingerprint/PIN return gate", "no email re-entry after exit", "multiple email accounts", "account switching", "confirmation before switching"],
-    "description": "Verifies system exit keeps the current email session, activates a local device lock when needed, and requires fingerprint/PIN on return; account switching remains the explicit sign-out path.",
-    "steps": ["Sign in as Account A", "Open the sidebar and choose the system-exit action", "Confirm the exit", "Reopen the app", "Unlock with fingerprint/PIN", "Verify Account A opens without email login", "Use the separate account-switch action", "Cancel once, then confirm", "Complete sign-in for Account B"],
-    "expected": "System exit never calls sign-out; reopening uses device verification for Account A without email re-entry. Account switching separately requires confirmation and then signs out Account A."
+    "name":"All payroll and finance dates are Solar Hijri 1405",
+    "viewport":"mobile",
+    "covers":["1405 month selector","1405 transaction date input","solar report dates","solar audit dates","solar ledger dates"],
+    "description":"Verifies user-facing dates and payroll months use Solar Hijri 1405, with Gregorian representation kept internal where backend validation requires it.",
+    "steps":["Open the Payroll section and create a record","Verify the month selector shows only 1405 months","Open Transactions and create a record","Verify the date field uses a 1405 Solar date such as 1405/07/08","Open Reports and verify the report date is Solar 1405","Open Audit and Ledger and verify displayed dates are Solar"],
+    "expected":"Payroll month and finance date entry/display are Solar Hijri 1405 throughout the user interface and reports."
   },
   {
-    "name": "Ordinary users cannot access another account’s data",
-    "viewport": "mobile",
-    "covers": ["server authorization", "email/user isolation", "unauthorized edit/delete rejection"],
-    "description": "Verifies User B cannot see or mutate User A records through normal application access.",
-    "steps": ["Sign in as User A and create a personnel record", "Switch to User B", "Open Personnel", "Try to use the application to access User A data"],
-    "expected": "User B sees only User B records and cannot edit or delete User A records."
+    "name":"Persistent sign-in exit locks the device without signing out",
+    "viewport":"mobile",
+    "covers":["persistent sign-in","device fingerprint/PIN","account switching"],
+    "description":"Verifies system exit keeps the account session and return requires local device verification.",
+    "steps":["Sign in as Account A","Open the sidebar and choose the system-exit action","Confirm the exit","Reopen the app","Unlock with fingerprint/PIN","Verify Account A opens without email login","Use the separate account-switch action"],
+    "expected":"System exit never signs out the account; return uses device verification, while explicit account switching signs out only after confirmation."
   },
   {
-    "name": "Safe refresh and color controls remain available",
-    "viewport": "mobile",
-    "covers": ["safe refresh action", "no system shutdown action", "color presets", "custom colors", "mobile settings", "app-only screen"],
-    "description": "Verifies safe refresh, appearance controls and app-only display behavior remain available.",
-    "steps": ["Open the sidebar and tap 'معلومات تازه کول'", "Open Settings", "Choose a color preset", "Refresh the app", "Return to Settings"],
-    "expected": "The app refreshes without signing out, the chosen appearance remains available, and the app contains no embedded third-party frame or advertising surface."
+    "name":"Safe refresh and color controls remain available",
+    "viewport":"mobile",
+    "covers":["safe refresh","color presets","app-only screen"],
+    "description":"Verifies safe refresh, appearance controls and app-only display behavior remain available.",
+    "steps":["Open the sidebar and tap 'معلومات تازه کول'","Open Settings","Choose a color preset","Refresh the app","Return to Settings"],
+    "expected":"The app refreshes without signing out, the chosen appearance remains available, and no embedded third-party frame or advertising surface is exposed by the application."
   }
 ]
