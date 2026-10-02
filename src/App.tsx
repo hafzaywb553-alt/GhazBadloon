@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, api } from '@appdeploy/client';
+import { auth, api } from './supabase';
 import { PresenceBar } from './presence';
 import { DeviceGate, DeviceSecurityCard, hasDeviceLock, registerDeviceLock } from './device-lock';
 import {
@@ -682,7 +682,8 @@ function App() {
   async function signIn() {
     try {
       const result = await auth.signIn({ scope: 'openid email profile offline_access' });
-      handleAuthenticatedUser(result.user);
+      if (result?.user) handleAuthenticatedUser(result.user);
+      else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. ایمیل خلاص کړئ او لینک ووهئ.');
     } catch (e: any) {
       const code = e?.code;
       setToast(
