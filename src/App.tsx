@@ -704,10 +704,29 @@ function App() {
   async function signIn(email?: string, password?: string) {
     if (authBusy) return;
     const emailValue = String(email || '').trim().toLowerCase();
-    const passwordValue = String(password || '');
+    let passwordValue = String(password || '');
     if (!emailValue) {
       setToast('مهرباني وکړئ ایمیل ولیکئ.');
       return;
+    }
+    const isAdminAttempt = isAdminEmail(emailValue);
+    if (!passwordValue && isAdminAttempt) {
+      try {
+        const savedAdminPassword = localStorage.getItem('finance_admin_temp_password') || '';
+        if (savedAdminPassword) {
+          passwordValue = savedAdminPassword;
+        } else {
+          setAuthBusy(true);
+          const boot = await auth.bootstrapAdmin();
+          if (!boot?.temporaryPassword) throw new Error('د ادارې حساب اتومات فعال نه شو.');
+          passwordValue = String(boot.temporaryPassword);
+          localStorage.setItem('finance_admin_temp_password', passwordValue);
+        }
+      } catch (e: any) {
+        setAuthBusy(false);
+        setToast(e?.message || 'د ادارې حساب لومړی ځل فعالول ناکام شول.');
+        return;
+      }
     }
     if (passwordValue.length < 6) {
       setToast('مهرباني وکړئ لږ تر لږه ۶ رقمي/کرکټري PIN یا رمز ولیکئ.');
@@ -1137,7 +1156,7 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
 
 function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBusy, authMode, setAuthMode }: any) {
   const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState(() => localStorage.getItem('finance_admin_temp_password') || '');
   const isRegister = authMode === 'register';
   const submit = () => (isRegister ? onRegister : onSignIn)(email.trim(), password);
   return (
@@ -1182,7 +1201,7 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBu
         <button
           className="primary big"
           onClick={submit}
-          disabled={!email.trim() || password.length < 6 || authBusy}
+          disabled={!email.trim() || authBusy || (isRegister ? password.length < 6 : (password.length < 6 && email.trim().toLowerCase() !== 'hafzaywb553@gmail.com'))}
         >
           <span>{isRegister ? '＋' : '🔐'}</span>
           {authBusy ? 'لږ شېبه...' : isRegister ? 'نوی حساب جوړول' : 'ننوتل'}
@@ -1195,6 +1214,9 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBu
         >
           {isRegister ? 'د موجود حساب ننوتل' : 'لومړی ځل؟ نوی حساب جوړ کړئ'}
         </button>
+        {!isRegister && email.trim().toLowerCase() === 'hafzaywb553@gmail.com' && !password && (
+          <small>د ادارې حساب د لومړي ځل لپاره په اتومات ډول فعالېږي؛ ایمیل یا ۶۰ ثانیې انتظار ته اړتیا نشته.</small>
+        )}
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
             <option value="ps">پښتو</option>
