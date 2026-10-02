@@ -531,6 +531,7 @@ function App() {
   const [toast, setToast] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authCooldown, setAuthCooldown] = useState(0);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [installEvent, setInstallEvent] = useState<any>(null);
   const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
     try {
@@ -700,48 +701,52 @@ function App() {
     api.post('/api/profile', {}).catch(() => {});
   }
 
-  async function signIn(email?: string) {
-    if (authBusy || authCooldown > 0) return;
+  async function signIn(email?: string, password?: string) {
+    if (authBusy) return;
     const emailValue = String(email || '').trim().toLowerCase();
+    const passwordValue = String(password || '');
     if (!emailValue) {
       setToast('مهرباني وکړئ ایمیل ولیکئ.');
       return;
     }
-
+    if (passwordValue.length < 6) {
+      setToast('مهرباني وکړئ لږ تر لږه ۶ رقمي/کرکټري PIN یا رمز ولیکئ.');
+      return;
+    }
     setAuthBusy(true);
     try {
-      const result = await auth.signIn(emailValue);
-      setAuthCooldown(60);
+      const result = await auth.signIn(emailValue, passwordValue);
       if (result?.user) handleAuthenticatedUser(result.user);
-      else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. Gmail/Inbox او Spam وګورئ؛ لینک ووهئ، بیا به سیسټم په اوتومات ډول پرانیستل شي.');
     } catch (e: any) {
-      const code = e?.code;
-      const status = e?.status;
-      if (code === 'over_email_send_rate_limit') {
-        setAuthCooldown(60);
-        setToast('د ایمیل لېږلو د Supabase حد پوره شوی. پرله‌پسې کلیک مه کوئ؛ وروسته بیا هڅه وکړئ.');
-      } else if (code === 'over_request_rate_limit' || status === 429) {
-        setAuthCooldown(60);
-        setToast('د ننوتلو غوښتنې ډېرې شوې دي. لږ انتظار وکړئ او بیا یوازې یو ځل کلیک وکړئ.');
-      } else if (code === 'otp_disabled') {
-        setToast('د ایمیل Login په Supabase کې فعال نه دی.');
-      } else if (code === 'email_address_not_authorized') {
-        setToast('دا ایمیل د Supabase د اوسني Email Provider له خوا اجازه نه لري.');
-      } else {
-        setToast(e?.message || `د ننوتلو ستونزه: ${code || 'نامعلومه تېروتنه'}`);
-      }
+      setToast(e?.message || 'ایمیل یا PIN/رمز سم نه دی.');
     } finally {
       setAuthBusy(false);
     }
   }
 
-  useEffect(() => {
-    if (authCooldown <= 0) return;
-    const timer = window.setInterval(() => {
-      setAuthCooldown(value => (value > 0 ? value - 1 : 0));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [authCooldown]);
+  async function registerAccount(email?: string, password?: string) {
+    if (authBusy) return;
+    const emailValue = String(email || '').trim().toLowerCase();
+    const passwordValue = String(password || '');
+    if (!emailValue) {
+      setToast('مهرباني وکړئ ایمیل ولیکئ.');
+      return;
+    }
+    if (passwordValue.length < 6) {
+      setToast('د حساب لپاره لږ تر لږه ۶ رقمي/کرکټري PIN یا رمز وټاکئ.');
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      await auth.register(emailValue, passwordValue);
+      const result = await auth.signIn(emailValue, passwordValue);
+      if (result?.user) handleAuthenticatedUser(result.user);
+    } catch (e: any) {
+      setToast(e?.message || 'حساب جوړ نه شو؛ شاید دا ایمیل مخکې ثبت شوی وي.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }
 
   async function installApp() {
     if (!installEvent) return;
@@ -895,8 +900,10 @@ function App() {
         setTheme={setTheme}
         t={t}
         onSignIn={signIn}
+        onRegister={registerAccount}
         authBusy={authBusy}
-        authCooldown={authCooldown}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
       />
     );
 
@@ -1128,8 +1135,11 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
   );
 }
 
-function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCooldown }: any) {
+function Login({ lang, setLang, theme, setTheme, t, onSignIn, onRegister, authBusy, authMode, setAuthMode }: any) {
   const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
+  const [password, setPassword] = useState('');
+  const isRegister = authMode === 'register';
+  const submit = () => (isRegister ? onRegister : onSignIn)(email.trim(), password);
   return (
     <div className="login-page">
       <div className="login-glow" />
@@ -1149,22 +1159,41 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy, authCool
             type="email"
             value={email}
             onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && email.trim() && !authBusy && authCooldown === 0) onSignIn(email.trim());
-            }}
             placeholder="name@example.com"
             autoComplete="email"
             inputMode="email"
             dir="ltr"
           />
         </label>
+        <label className="login-email-field">
+          {isRegister ? 'نوی PIN / رمز' : 'PIN / رمز'}
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && email.trim() && password.length >= 6 && !authBusy) submit();
+            }}
+            placeholder="لږ تر لږه ۶ کرکټرونه"
+            autoComplete={isRegister ? 'new-password' : 'current-password'}
+            dir="ltr"
+          />
+        </label>
         <button
           className="primary big"
-          onClick={() => onSignIn(email.trim())}
-          disabled={!email.trim() || authBusy || authCooldown > 0}
+          onClick={submit}
+          disabled={!email.trim() || password.length < 6 || authBusy}
         >
-          <span>✉</span>
-          {authBusy ? 'لېږل کېږي...' : authCooldown > 0 ? `بیا ${authCooldown} ثانیې وروسته` : t.email}
+          <span>{isRegister ? '＋' : '🔐'}</span>
+          {authBusy ? 'لږ شېبه...' : isRegister ? 'نوی حساب جوړول' : 'ننوتل'}
+        </button>
+        <button
+          type="button"
+          className="ghost big"
+          onClick={() => setAuthMode(isRegister ? 'login' : 'register')}
+          disabled={authBusy}
+        >
+          {isRegister ? 'د موجود حساب ننوتل' : 'لومړی ځل؟ نوی حساب جوړ کړئ'}
         </button>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
