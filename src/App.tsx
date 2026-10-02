@@ -651,7 +651,7 @@ function App() {
   }, [user]);
   useEffect(() => {
     if (toast) {
-      const id = setTimeout(() => setToast(''), 1800);
+      const id = setTimeout(() => setToast(''), 6000);
       return () => clearTimeout(id);
     }
   }, [toast]);
@@ -895,6 +895,8 @@ function App() {
         setTheme={setTheme}
         t={t}
         onSignIn={signIn}
+        authBusy={authBusy}
+        authCooldown={authCooldown}
       />
     );
 
