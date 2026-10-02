@@ -687,6 +687,11 @@ function App() {
     setUser(null);
   }
 
+  function makeDeviceSecret() {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   async function signIn(email?: string) {
     if (authBusy) return;
     const emailValue = String(email || '').trim().toLowerCase();
@@ -695,9 +700,33 @@ function App() {
       return;
     }
 
+    const secretKey = 'finance_device_secret:' + emailValue;
+    let hiddenSecret = localStorage.getItem(secretKey) || '';
+
     setAuthBusy(true);
     try {
-      const result = await auth.signIn(emailValue);
+      if (!hiddenSecret) {
+        if (isAdminEmail(emailValue)) {
+          const boot = await auth.bootstrapAdmin();
+          if (!boot?.temporaryPassword) {
+            throw new Error('د مدیر حساب لومړی ځل فعال نه شو.');
+          }
+          hiddenSecret = String(boot.temporaryPassword);
+        } else {
+          hiddenSecret = makeDeviceSecret();
+          try {
+            await auth.register(emailValue, hiddenSecret);
+          } catch (e: any) {
+            if (e?.code === 'user_exists' || e?.status === 409) {
+              throw new Error('دا ایمیل لا مخکې ثبت شوی، خو په دې موبایل کې یې د لومړي ځل داخلي ثبت بشپړ شوی نه دی.');
+            }
+            throw e;
+          }
+        }
+        localStorage.setItem(secretKey, hiddenSecret);
+      }
+
+      const result = await auth.signIn(emailValue, hiddenSecret);
       if (result?.user) handleAuthenticatedUser(result.user);
     } catch (e: any) {
       setToast(e?.message || 'د ایمیل له لارې ننوتل ناکام شول.');
@@ -1091,7 +1120,7 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
         </div>
         <h1>{t.login}</h1>
         <h2>{t.app}</h2>
-        <p>لومړی ځل یوازې خپل ایمیل ولیکئ. له هغې وروسته سیستم د همدې موبایل Fingerprint یا د موبایل PIN په وسیله خلاصیږي.</p>
+        <p>لومړی ځل یوازې خپل ایمیل ولیکئ. حساب به په همدې موبایل کې ثبت شي، بیا سیستم یوازې د همدې موبایل Fingerprint یا د موبایل PIN غواړي.</p>
         <label className="login-email-field">
           {t.email}
           <input
@@ -1115,7 +1144,7 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn, authBusy }: any) {
           <FingerprintIcon />
           {authBusy ? 'لږ شېبه...' : 'ایمیل سره ننوتل'}
         </button>
-        <small>هیڅ Password، PIN، OTP یا د ایمیل انتظار ته اړتیا نشته. د لومړي ایمیل وروسته د دې موبایل د Fingerprint/PIN قفل فعالېږي.</small>
+        <small>هیڅ Password، OTP، لینک یا ۶۰ ثانیې انتظار نشته. لومړی ایمیل وروسته بیا یوازې د همدې موبایل Fingerprint/PIN کارول کېږي.</small>
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
             <option value="ps">پښتو</option>
