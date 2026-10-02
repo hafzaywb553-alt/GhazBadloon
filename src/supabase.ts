@@ -83,6 +83,9 @@ export const auth = {
     const email = String(emailInput || '').trim().toLowerCase();
     return authApi('/register', { email, password });
   },
+  async bootstrapAdmin() {
+    return authApi('/bootstrap-admin', {});
+  },
   onAuthStateChange(callback: Parameters<typeof supabase.auth.onAuthStateChange>[0]) {
     return supabase.auth.onAuthStateChange(callback);
   },
