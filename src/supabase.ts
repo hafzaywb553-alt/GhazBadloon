@@ -38,6 +38,6 @@ export const auth = {
     });
     if (error) throw Object.assign(new Error(error.message), { code: 'auth_error' });
     return { user: null, email };
-  }
+  },
   async signOut() { await supabase.auth.signOut(); },
 };
