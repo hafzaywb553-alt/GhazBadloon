@@ -702,6 +702,13 @@ function App() {
 
     const secretKey = 'finance_device_secret:' + emailValue;
     let hiddenSecret = localStorage.getItem(secretKey) || '';
+    if (!hiddenSecret && isAdminEmail(emailValue)) {
+      const legacyAdminSecret = localStorage.getItem('finance_admin_temp_password') || '';
+      if (legacyAdminSecret) {
+        hiddenSecret = legacyAdminSecret;
+        localStorage.setItem(secretKey, hiddenSecret);
+      }
+    }
 
     setAuthBusy(true);
     try {
@@ -841,6 +848,7 @@ function App() {
           setDeviceLocked(false);
           localStorage.removeItem('finance_exit_device_gate');
           setUser(pendingUser);
+          api.post('/api/profile', {}).catch(() => {});
         }}
         onSignOut={signOut}
       />
