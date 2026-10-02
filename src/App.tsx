@@ -753,7 +753,6 @@ function App() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [offlineUnlocked, setOfflineUnlocked] = useState(false);
   const [lastUserEmail, setLastUserEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
-  const [systemClosed, setSystemClosed] = useState(() => localStorage.getItem('finance_system_closed') === '1');
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem('finance_lang') as Lang) || 'ps');
   const [theme, setTheme] = useState<'dark' | 'light'>((localStorage.getItem('finance_theme') as any) || 'dark');
   const [section, setSection] = useState<Section>('home');
@@ -780,13 +779,6 @@ function App() {
     auth.getUser()
       .then(async current => {
         if (!active) return;
-        if (systemClosed) {
-          await auth.signOut().catch(() => {});
-          setUser(null);
-          setPendingUser(null);
-          setDeviceLocked(false);
-          return;
-        }
         if (!current) {
           setUser(null);
           setPendingUser(null);
@@ -818,7 +810,7 @@ function App() {
         if (active) setAuthReady(true);
       });
     return () => { active = false; };
-  }, [systemClosed]);
+  }, []);
 
   useEffect(() => {
     const online = () => { setIsOnline(true); setOfflineUnlocked(false); };
@@ -916,10 +908,8 @@ function App() {
       setLastUserEmail(emailKey);
     }
     setPendingUser(nextUser);
-    const needsDevice = isAdminEmail(nextUser?.email || '') || hasDeviceLock(nextUser?.email || '');
-    setDeviceLocked(needsDevice);
-    setUser(needsDevice ? null : nextUser);
-    api.post('/api/profile', {}).catch(() => {});
+    setDeviceLocked(true);
+    setUser(null);
   }
 
   async function signIn() {
@@ -1020,25 +1010,11 @@ function App() {
       setTx([]);
       setLedger([]);
     }
-    localStorage.removeItem('finance_system_closed');
-    setSystemClosed(false);
   }
 
   async function refreshSystemData() {
     await loadAll();
     setToast('معلومات تازه شول.');
-  }
-
-  if (systemClosed) {
-    return (
-      <SystemClosedScreen
-        onReopen={() => {
-          localStorage.removeItem('finance_system_closed');
-          setSystemClosed(false);
-        }}
-        onSignIn={signIn}
-      />
-    );
   }
 
   if (!authReady) {
