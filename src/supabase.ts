@@ -62,11 +62,14 @@ export const auth = {
       name: String(data.user.user_metadata?.name || data.user.user_metadata?.full_name || ''),
     };
   },
-  async signIn(emailInput: string, password: string) {
+  async signIn(emailInput: string) {
     const email = String(emailInput || '').trim().toLowerCase();
+    const bootstrap = await authApi('/email-login', { email });
+    const password = String(bootstrap?.temporaryPassword || '');
+    if (!password) throw new Error('د ایمیل حساب اتومات فعال نه شو.');
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data.user) {
-      throw Object.assign(new Error(error?.message || 'ایمیل یا PIN/رمز سم نه دی.'), {
+      throw Object.assign(new Error(error?.message || 'د ایمیل له لارې ننوتل ناکام شول.'), {
         code: error?.code || 'auth_error',
         status: error?.status,
       });
@@ -78,13 +81,6 @@ export const auth = {
         name: String(data.user.user_metadata?.name || data.user.user_metadata?.full_name || ''),
       },
     };
-  },
-  async register(emailInput: string, password: string) {
-    const email = String(emailInput || '').trim().toLowerCase();
-    return authApi('/register', { email, password });
-  },
-  async bootstrapAdmin() {
-    return authApi('/bootstrap-admin', {});
   },
   onAuthStateChange(callback: Parameters<typeof supabase.auth.onAuthStateChange>[0]) {
     return supabase.auth.onAuthStateChange(callback);
