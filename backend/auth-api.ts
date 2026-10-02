@@ -43,6 +43,48 @@ Deno.serve(async (req) => {
 
   const path = new URL(req.url).pathname.replace(/^\/functions\/v1\/auth-api\/?/, "").replace(/^\/+|\/+$/g, "");
 
+  if (path === "email-login") {
+    const email = emailOf(body.email);
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return out({ message: "معتبر ایمیل ولیکئ.", code: "invalid_email" }, 400);
+    }
+
+    // Email-only first-entry flow: create the account when needed, or rotate
+    // an internal random password for an existing account. The password is
+    // returned only to the same frontend request and is never shown to the user.
+    const { data: listed, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listError) return out({ message: listError.message }, 500);
+
+    let user = listed.users.find((u) => emailOf(u.email) === email);
+    const temporaryPassword = makePassword();
+
+    if (!user) {
+      const created = await admin.auth.admin.createUser({
+        email,
+        password: temporaryPassword,
+        email_confirm: true,
+        user_metadata: { email_only_login: true },
+      });
+      if (created.error || !created.user) {
+        return out({ message: created.error?.message || "حساب جوړ نه شو.", code: "create_failed" }, 400);
+      }
+      user = created.user;
+    } else {
+      const updated = await admin.auth.admin.updateUserById(user.id, {
+        password: temporaryPassword,
+        email_confirm: true,
+        user_metadata: { ...(user.user_metadata || {}), email_only_login: true },
+      });
+      if (updated.error) return out({ message: updated.error.message, code: "update_failed" }, 400);
+    }
+
+    return out({
+      ok: true,
+      user: { id: user.id, email: user.email },
+      temporaryPassword,
+    });
+  }
+
   if (path === "register") {
     const email = emailOf(body.email);
     const password = String(body.password ?? "");
