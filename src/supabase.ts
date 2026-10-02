@@ -32,10 +32,13 @@ export const auth = {
     const saved = localStorage.getItem('finance_last_user_email') || '';
     const email = String(window.prompt('د ننوتلو لپاره خپل ایمیل ولیکئ:', saved) || '').trim().toLowerCase();
     if (!email) throw Object.assign(new Error('ایمیل داخل نه شو.'), { code: 'email_required' });
-    const redirectTo = window.location.origin + window.location.pathname;
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo, shouldCreateUser: true } });
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
     if (error) throw Object.assign(new Error(error.message), { code: 'auth_error' });
-    return { user: null, email };
+    const token = String(window.prompt('د خپل ایمیل ۶ رقمي تایید کوډ ولیکئ:') || '').trim();
+    if (!/^\\d{6}$/.test(token)) throw Object.assign(new Error('د تایید کوډ سم داخل نه شو.'), { code: 'auth_error' });
+    const verified = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+    if (verified.error || !verified.data.user) throw Object.assign(new Error(verified.error?.message || 'د ایمیل تایید ناکام شو.'), { code: 'auth_error' });
+    return { user: { userId: verified.data.user.id, email: verified.data.user.email || '', name: String(verified.data.user.user_metadata?.name || '') } };
   },
   async signOut() { await supabase.auth.signOut(); },
 };
