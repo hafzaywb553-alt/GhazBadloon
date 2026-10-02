@@ -350,12 +350,13 @@ async function apiPost(path: string, body: Record<string, unknown> = {}) {
   if (resource === 'presence') {
     const ctx = currentIdentity();
     const sessionId = String(body.sessionId || ctx.uid);
+    const online = id !== 'offline';
     await setDoc(doc(db, 'presence', ctx.uid), {
       userId: ctx.uid,
       email: ctx.email,
       name: ctx.name,
       sessionId,
-      online: true,
+      online,
       lastSeen: now(),
     }, { merge: true });
     return { data: await presencePayload() };
