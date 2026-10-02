@@ -679,9 +679,9 @@ function App() {
     api.post('/api/profile', {}).catch(() => {});
   }
 
-  async function signIn() {
+  async function signIn(email?: string) {
     try {
-      const result = await auth.signIn({ scope: 'openid email profile offline_access' });
+      const result = await auth.signIn(email || '');
       if (result?.user) handleAuthenticatedUser(result.user);
       else setToast('د ننوتلو لینک ستاسې ایمیل ته واستول شو. ایمیل خلاص کړئ او لینک ووهئ.');
     } catch (e: any) {
@@ -1082,6 +1082,7 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
 }
 
 function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
+  const [email, setEmail] = useState(() => localStorage.getItem('finance_last_user_email') || '');
   return (
     <div className="login-page">
       <div className="login-glow" />
@@ -1095,7 +1096,20 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
         <h1>{t.login}</h1>
         <h2>{t.app}</h2>
         <p>{t.access}</p>
-        <button className="primary big" onClick={onSignIn}>
+        <label className="login-email-field">
+          {t.email}
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && email.trim()) onSignIn(email.trim()); }}
+            placeholder="name@example.com"
+            autoComplete="email"
+            inputMode="email"
+            dir="ltr"
+          />
+        </label>
+        <button className="primary big" onClick={() => onSignIn(email.trim())} disabled={!email.trim()}>
           <span>✉</span>
           {t.email}
         </button>
