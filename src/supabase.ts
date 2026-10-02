@@ -32,7 +32,7 @@ async function request(path: string, method = 'GET', body?: unknown) {
 async function authApi(path: string, body: unknown) {
   const response = await fetch(SUPABASE_URL + '/functions/v1/auth-api' + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-app-access': 'ghazbadloon-client-2026' },
     body: JSON.stringify(body),
   });
   const payload = await response.json().catch(() => ({}));
