@@ -911,19 +911,19 @@ function App() {
     setUser(null);
   }
 
-  async function signIn() {
+  async function signIn(email?: string) {
     try {
-      const result = await auth.signIn();
+      const result = await auth.signIn(email);
       if (result.user) {
         handleAuthenticatedUser(result.user);
       } else if (result.pendingEmail) {
-        setToast(`د ${result.pendingEmail} لپاره د ننوتلو لینک ایمیل ته واستول شو؛ لینک خلاص کړئ، بیا همدا سیستم پرانیزئ.`);
+        setToast(`د ${result.pendingEmail} لپاره د ننوتلو لینک ایمیل ته واستول شو. همدا لینک خلاص کړئ؛ ایمیل به بیا نه غواړو.`);
       }
     } catch (e: any) {
       const code = e?.code;
       setToast(
         code === 'popup_blocked'
-          ? 'د ایمیل ننوتلو کړکۍ بنده ده؛ د براوزر Pop-up اجازه ورکړئ.'
+          ? 'د ننوتلو کړکۍ بنده ده؛ د براوزر Pop-up اجازه ورکړئ.'
           : code === 'popup_closed'
             ? 'د ننوتلو کړکۍ له بشپړېدو مخکې بنده شوه.'
             : code === 'auth_error'
@@ -1303,6 +1303,21 @@ function SystemClosedScreen({ onReopen, onSignIn }: any) {
 }
 
 function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
+  const [email, setEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (event: any) => {
+    event.preventDefault();
+    const value = String(email || '').trim();
+    if (!value) return;
+    setBusy(true);
+    try {
+      await onSignIn(value);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="login-page">
       <div className="login-glow" />
@@ -1316,10 +1331,28 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
         <h1>{t.login}</h1>
         <h2>{t.app}</h2>
         <p>{t.access}</p>
-        <button className="primary big" onClick={onSignIn}>
-          <span>✉</span>
-          {t.email}
-        </button>
+
+        <form onSubmit={submit} className="login-form">
+          <label>
+            {t.email}
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoFocus
+              placeholder="example@gmail.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              disabled={busy}
+              required
+            />
+          </label>
+          <button className="primary big" type="submit" disabled={busy}>
+            <span>✉</span>
+            {busy ? 'د ننوتلو لینک لېږل کېږي...' : t.email}
+          </button>
+        </form>
+
         <div className="login-tools">
           <select value={lang} onChange={e => setLang(e.target.value)}>
             <option value="ps">پښتو</option>
