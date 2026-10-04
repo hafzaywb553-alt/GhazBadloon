@@ -98,13 +98,10 @@ export const firebaseAuth = {
     return mapUser(current);
   },
 
-  async signIn(): Promise<{ user: AppUser | null; pendingEmail?: string }> {
+  async signIn(emailInput?: string): Promise<{ user: AppUser | null; pendingEmail?: string }> {
     await authPersistenceReady;
 
-    const entered = window.prompt(
-      'د لومړي ځل ننوتلو لپاره خپل ایمیل ولیکئ.\n\nد Google حساب لپاره GOOGLE ولیکئ.'
-    );
-    const value = String(entered || '').trim();
+    const value = String(emailInput || '').trim();
     if (!value) throw new Error('د ننوتلو لپاره ایمیل اړین دی.');
 
     if (value.toLowerCase() === 'google') {
