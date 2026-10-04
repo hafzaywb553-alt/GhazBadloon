@@ -58,6 +58,15 @@ function mapUser(user: User | null): AppUser | null {
   };
 }
 
+function waitForInitialAuthState(): Promise<User | null> {
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      resolve(user);
+    });
+  });
+}
+
 export async function finishEmailLinkIfNeeded(): Promise<AppUser | null> {
   await authPersistenceReady;
   if (!isSignInWithEmailLink(auth, window.location.href)) {
@@ -80,7 +89,13 @@ export async function finishEmailLinkIfNeeded(): Promise<AppUser | null> {
 export const firebaseAuth = {
   async getUser(): Promise<AppUser | null> {
     await authPersistenceReady;
-    return finishEmailLinkIfNeeded();
+
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      return finishEmailLinkIfNeeded();
+    }
+
+    const current = await waitForInitialAuthState();
+    return mapUser(current);
   },
 
   async signIn(): Promise<{ user: AppUser | null; pendingEmail?: string }> {
