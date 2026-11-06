@@ -33,6 +33,11 @@ function moneyNumber(value: unknown): number | null {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function validDate(value: unknown) {
   const text = String(value ?? '').trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(text + 'T00:00:00Z'));
@@ -61,7 +66,7 @@ function withOwner(record: Record<string, unknown>, fallbackEmail = '') {
   };
 }
 
-async function listCollection(name: string, scoped = true) {
+async function listCollection(name: string, scoped = true): Promise<Array<Record<string, unknown> & { id: string }>> {
   const ctx = currentIdentity();
   const source = collection(db, name);
   const q = scoped && !ctx.admin ? query(source, where('userId', '==', ctx.uid)) : source;
@@ -98,17 +103,16 @@ async function audit(action: string, details: Record<string, unknown> = {}) {
 
 function generalSalaryWithholdingTaxMonthly(amount: number) {
   const taxable = Math.max(0, moneyNumber(amount) || 0);
-  if (taxable <= 5000) return 0;
-  if (taxable <= 12500) return Math.round((taxable - 5000) * 0.02 * 100) / 100;
-  if (taxable <= 100000) return Math.round((150 + (taxable - 12500) * 0.1) * 100) / 100;
-  return Math.round((8900 + (taxable - 100000) * 0.2) * 100) / 100;
+  if (taxable <= 10000) return 0;
+  const rate = taxable <= 100000 ? 0.10 : 0.15;
+  return Math.round((taxable * rate + Number.EPSILON) * 100) / 100;
 }
 
 function defenseSalaryTaxInternal(amount: number) {
   const taxable = Math.max(0, moneyNumber(amount) || 0);
   if (taxable <= 10000) return 0;
-  if (taxable <= 100000) return Math.round(taxable * 0.1 * 100) / 100;
-  return Math.round(taxable * 0.15 * 100) / 100;
+  const rate = taxable <= 100000 ? 0.10 : 0.15;
+  return Math.round((taxable * rate + Number.EPSILON) * 100) / 100;
 }
 
 function salaryTaxByInstitution(amount: number, institution: string) {
@@ -179,9 +183,20 @@ async function ledgerPayload() {
   }
 
   for (const x of payroll) {
-    const gross = moneyNumber(x.gross) || 0;
-    const net = moneyNumber(x.net) || 0;
-    const fees = moneyNumber(x.fees) || 0;
+    const storedGross = moneyNumber(x.gross) || 0;
+    const componentGross = roundMoney(
+      (moneyNumber(x.baseSalary) || 0)
+      + (moneyNumber(x.recurringAllowance) || 0)
+      + (moneyNumber(x.extraordinaryAllowance) || 0)
+    );
+    const gross = componentGross > 0 ? componentGross : storedGross;
+    const storedTax = moneyNumber(x.taxAmount);
+    const storedDeductions = moneyNumber(x.totalDeductions ?? x.fees) || 0;
+    const otherDeductions = moneyNumber(x.otherDeductions)
+      ?? Math.max(0, roundMoney(storedDeductions - (storedTax ?? 0)));
+    const taxAmount = salaryTaxByInstitution(gross, String(x.institution || DEFENSE_TAX_PROFILE_LABEL));
+    const fees = roundMoney(taxAmount + otherDeductions);
+    const net = roundMoney(Math.max(0, gross - fees));
     const ref = `PR-${String(x.id).slice(0, 8)}`;
     const month = String(x.month || '');
     const date = /^\d{4}-\d{2}$/.test(month) ? month + '-01' : now().slice(0, 10);
@@ -254,7 +269,7 @@ async function apiGet(path: string) {
 }
 
 async function apiPost(path: string, body: Record<string, unknown> = {}) {
-  const { resource } = parsePath(path);
+  const { resource, id } = parsePath(path);
 
   if (resource === 'profile') {
     const ctx = currentIdentity();
@@ -304,7 +319,7 @@ async function apiPost(path: string, body: Record<string, unknown> = {}) {
     const otherDeductions = moneyNumber(body.otherDeductions) || 0;
     const institution = String(body.institution || DEFENSE_TAX_PROFILE_LABEL);
     const gross = Math.round((baseSalary + recurringAllowance + extraordinaryAllowance + Number.EPSILON) * 100) / 100;
-    const taxableIncome = baseSalary;
+    const taxableIncome = gross;
     const taxAmount = salaryTaxByInstitution(taxableIncome, institution);
     const totalDeductions = Math.round((taxAmount + otherDeductions + Number.EPSILON) * 100) / 100;
     const net = Math.round((gross - totalDeductions + Number.EPSILON) * 100) / 100;
@@ -416,7 +431,7 @@ async function apiPut(path: string, body: Record<string, unknown> = {}) {
     }
 
     const gross = Math.round((baseSalary + recurringAllowance + extraordinaryAllowance + Number.EPSILON) * 100) / 100;
-    const taxableIncome = baseSalary;
+    const taxableIncome = gross;
     const taxAmount = salaryTaxByInstitution(taxableIncome, institution);
     const totalDeductions = Math.round((taxAmount + otherDeductions + Number.EPSILON) * 100) / 100;
     const net = Math.round((gross - totalDeductions + Number.EPSILON) * 100) / 100;
