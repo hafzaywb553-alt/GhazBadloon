@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, authApi as auth } from './firebase-api';
 import { PresenceBar } from './presence';
 import { DeviceGate, DeviceSecurityCard, hasDeviceLock, registerDeviceLock } from './device-lock';
@@ -483,8 +483,8 @@ function money(n: number) {
     roundMoney(n)
   );
 }
-function num(v: string) {
-  const value = Number(String(v || '').replace(/,/g, ''));
+function num(v: unknown) {
+  const value = Number(String(v ?? '').replace(/,/g, ''));
   return Number.isFinite(value) ? roundMoney(value) : 0;
 }
 
@@ -739,7 +739,6 @@ const EXTRA_UI_TRANSLATIONS: Record<string, Partial<Record<Lang, string>>> = {
   'ملکي وزارت / لوی ریاست': {fa:'وزارت / ریاست عمومی ملکی',ar:'وزارة / إدارة عامة مدنية',ur:'سویلین وزارت / محکمہ',en:'Civilian Ministry / Directorate'},
   'نظامي': {fa:'نظامی',ar:'عسكري',ur:'فوجی',en:'Military'},
   'ملکي': {fa:'ملکی',ar:'مدني',ur:'سویلین',en:'Civilian'},
-  'د یوې ورځې اعاشه': {fa:'اعاشه یک روز',ar:'إعاشة يوم واحد',ur:'ایک دن کی اعاشہ',en:'Daily Feeding Allowance'},
   'د ټاکل شوې میاشتې اعاشه': {fa:'اعاشه دوره انتخاب‌شده',ar:'إعاشة الفترة المحددة',ur:'منتخب مدت کی اعاشہ',en:'Selected Period Feeding'},
   'د خدمت موده (کلونه)': {fa:'مدت خدمت (سال‌ها)',ar:'مدة الخدمة (بالسنوات)',ur:'سروس کی مدت (سال)',en:'Service Duration (Years)'},
   'د خدمت مودې اتومات امتیاز': {fa:'امتیاز خودکار مدت خدمت',ar:'بدل مدة الخدمة التلقائي',ur:'سروس مدت کا خودکار الاؤنس',en:'Automatic Service Allowance'},
@@ -2533,7 +2532,7 @@ function SettingsPage({ t, lang, setLang, theme, setTheme, settings, setSettings
           <label>د لیکنې اندازه<input type="range" min="13" max="22" value={settings.fontSize} onChange={e => update({ fontSize: Number(e.target.value) })} /></label>
           <label>د لیکنې ضخامت<select value={settings.bold ? 'bold' : 'normal'} onChange={e => update({ bold: e.target.value === 'bold' })}><option value="normal">عادي</option><option value="bold">BOLD / غلیظ</option></select></label>
           <label>د کارتونو ګردوالی<input type="range" min="0" max="28" value={settings.radius} onChange={e => update({ radius: Number(e.target.value) })} /></label>
-          <label>د کار ساحې تراکم<select value={settings.density} onChange={e => update({ density: e.target.value })}><option value="compact">کمپیکټ</option><option value="normal">عادي</option><option value="spacious">پراخه</option></select></label>
+          <label>د کار ساحې تراکم<select value={settings.density} onChange={e => update({ density: e.target.value as UiSettings['density'] })}><option value="compact">کمپیکټ</option><option value="normal">عادي</option><option value="spacious">پراخه</option></select></label>
           <label>اصلي رنګ<input type="color" value={settings.accent} onChange={e => update({ accent: e.target.value })} /></label>
           <label>د شالید رنګ<input type="color" value={settings.background} onChange={e => update({ background: e.target.value })} /></label>
           <label>د پینل رنګ<input type="color" value={settings.panel} onChange={e => update({ panel: e.target.value })} /></label>
