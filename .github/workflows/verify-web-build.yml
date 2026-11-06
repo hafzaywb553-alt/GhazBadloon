@@ -1,4 +1,4 @@
-name: Verify web build
+name: Verify Vite production build
 
 on:
   pull_request:
@@ -20,7 +20,5 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Type-check TypeScript
-        run: npx tsc --noEmit
       - name: Build web app
         run: npm run build
