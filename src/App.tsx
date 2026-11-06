@@ -7,6 +7,7 @@ import {
   BarChart3,
   BookOpen,
   Calculator,
+  CalendarDays,
   CheckCircle2,
   ChevronLeft,
   CircleHelp,
@@ -42,6 +43,7 @@ type Section =
   | 'personnel'
   | 'payroll'
   | 'salaryInfo'
+  | 'calendar'
   | 'salaryRules'
   | 'transactions'
   | 'accounts'
@@ -560,6 +562,83 @@ function getCurrentSolarYearMonth(){
   return {year:String(p.year),month:String(p.month).padStart(2,'0')};
 }
 function toFaDigits(value:string|number){ return String(value).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[Number(d)]); }
+
+type CalendarKind = 'solar' | 'lunar' | 'gregorian';
+type CalendarParts = { year:number; month:number; day:number };
+type CalendarConversion = { solar:string; lunar:string; gregorian:string };
+
+function normalizeCalendarDigits(value:string) {
+  return String(value || '').replace(/[۰-۹٠-٩]/g, d => {
+    const fa = '۰۱۲۳۴۵۶۷۸۹'.indexOf(d);
+    return String(fa >= 0 ? fa : '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+  });
+}
+
+function calendarDateParts(date:Date, kind:CalendarKind):CalendarParts {
+  const calendar = kind === 'solar' ? 'persian' : kind === 'lunar' ? 'islamic-umalqura' : 'gregory';
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat(`en-US-u-ca-${calendar}`, {
+      timeZone:'UTC', year:'numeric', month:'numeric', day:'numeric',
+    });
+  } catch {
+    formatter = new Intl.DateTimeFormat(kind === 'lunar' ? 'en-US-u-ca-islamic' : 'en-US', {
+      timeZone:'UTC', year:'numeric', month:'numeric', day:'numeric',
+    });
+  }
+  const parts = formatter.formatToParts(date);
+  return {
+    year:Number(parts.find(p=>p.type==='year')?.value || 0),
+    month:Number(parts.find(p=>p.type==='month')?.value || 0),
+    day:Number(parts.find(p=>p.type==='day')?.value || 0),
+  };
+}
+
+function parseCalendarDate(value:string):CalendarParts|null {
+  const raw = normalizeCalendarDigits(value).trim().replace(/[.-]/g,'/');
+  const match = raw.match(/^(\d{1,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!match) return null;
+  const parts = { year:Number(match[1]), month:Number(match[2]), day:Number(match[3]) };
+  if (parts.year < 1 || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31) return null;
+  return parts;
+}
+
+function findGregorianDate(value:string, kind:CalendarKind):Date|null {
+  const input = parseCalendarDate(value);
+  if (!input) return null;
+  if (kind === 'gregorian') {
+    const date = new Date(Date.UTC(input.year, input.month - 1, input.day));
+    return date.getUTCFullYear() === input.year && date.getUTCMonth() + 1 === input.month && date.getUTCDate() === input.day
+      ? date : null;
+  }
+
+  const approximateGregorianYear = kind === 'solar'
+    ? input.year + 621
+    : Math.floor(input.year * 0.970224 + 621);
+  const start = Date.UTC(approximateGregorianYear - 1, 0, 1);
+  for (let offset = 0; offset < 1100; offset += 1) {
+    const candidate = new Date(start + offset * 86400000);
+    const parts = calendarDateParts(candidate, kind);
+    if (parts.year === input.year && parts.month === input.month && parts.day === input.day) return candidate;
+  }
+  return null;
+}
+
+function formatCalendarDate(date:Date, kind:CalendarKind) {
+  const p = calendarDateParts(date, kind);
+  return `${p.year}/${String(p.month).padStart(2,'0')}/${String(p.day).padStart(2,'0')}`;
+}
+
+function convertCalendarDate(value:string, source:CalendarKind):CalendarConversion|null {
+  const gregorianDate = findGregorianDate(value, source);
+  if (!gregorianDate) return null;
+  return {
+    solar:formatCalendarDate(gregorianDate,'solar'),
+    lunar:formatCalendarDate(gregorianDate,'lunar'),
+    gregorian:formatCalendarDate(gregorianDate,'gregorian'),
+  };
+}
+
 type SolarPeriod={year:number;month:number;monthName:string;monthDays:number;days:number};
 function buildSolarPeriods(startYear:number,startMonth:number,totalDays:number){
   const out:SolarPeriod[]=[]; let y=startYear,m=startMonth,rem=Math.max(1,Math.floor(totalDays));
@@ -571,6 +650,21 @@ function buildSolarPeriods(startYear:number,startMonth:number,totalDays:number){
   return out;
 }
 const EXTRA_UI_TRANSLATIONS: Record<string, Partial<Record<Lang, string>>> = {
+  'د نېټو بدلون': {fa:'تبدیل تاریخ‌ها',ar:'تحويل التواريخ',ur:'تاریخوں کی تبدیلی',en:'Date Converter'},
+  'د نېټې سرچینه': {fa:'تقویم مبدأ',ar:'مصدر التاريخ',ur:'تاریخ کا ماخذ',en:'Source Calendar'},
+  'نېټه ولیکئ': {fa:'تاریخ را وارد کنید',ar:'أدخل التاريخ',ur:'تاریخ درج کریں',en:'Enter Date'},
+  'بدلون ترسره کړئ': {fa:'تبدیل تاریخ',ar:'تحويل التاريخ',ur:'تاریخ تبدیل کریں',en:'Convert Date'},
+  'هجري شمسي (لمریز)': {fa:'هجری شمسی',ar:'الهجري الشمسي',ur:'ہجری شمسی',en:'Solar Hijri'},
+  'هجري قمري (ام القری)': {fa:'هجری قمری (ام‌القری)',ar:'الهجري القمري (أم القرى)',ur:'ہجری قمری (ام القری)',en:'Lunar Hijri (Umm al-Qura)'},
+  'میلادي (عیسوي)': {fa:'میلادی',ar:'الميلادي',ur:'عیسوی',en:'Gregorian'},
+  'د بدلون پایله': {fa:'نتیجه تبدیل',ar:'نتيجة التحويل',ur:'تبدیلی کا نتیجہ',en:'Conversion Result'},
+  'مثال: ۱۴۰۵/۰۶/۰۸': {fa:'مثال: ۱۴۰۵/۰۶/۰۸',ar:'مثال: ۱۴۰۵/۰۶/۰۸',ur:'مثال: ۱۴۰۵/۰۶/۰۸',en:'Example: 1405/06/08'},
+  'د نېټې بڼه: کال/میاشت/ورځ': {fa:'قالب تاریخ: سال/ماه/روز',ar:'صيغة التاريخ: السنة/الشهر/اليوم',ur:'تاریخ کی ترتیب: سال/مہینہ/دن',en:'Date format: year/month/day'},
+  'د قمري میاشتې نېټه د ام القری تقویم له مخې ده؛ د محلي سپوږمۍ لیدلو له مخې یوه ورځ توپیر ممکن دی.': {fa:'تاریخ قمری بر اساس تقویم ام‌القری است؛ با رؤیت محلی هلال ممکن است یک روز تفاوت داشته باشد.',ar:'التاريخ القمري وفق تقويم أم القرى؛ وقد يختلف يوماً حسب رؤية الهلال المحلية.',ur:'قمری تاریخ ام القری کیلنڈر کے مطابق ہے؛ مقامی چاند دیکھنے کے لحاظ سے ایک دن فرق ہوسکتا ہے۔',en:'The lunar date uses the Umm al-Qura calendar; local moon sighting may differ by one day.'},
+  'بېلګه: ۱۴۰۵/۰۶/۰۸ = ۲۰۲۶/۰۸/۳۰ = ۱۴۴۸/۰۳/۱۷': {fa:'نمونه: ۱۴۰۵/۰۶/۰۸ = ۲۰۲۶/۰۸/۳۰ = ۱۴۴۸/۰۳/۱۷',ar:'مثال: ۱۴۰۵/۰۶/۰۸ = ۲۰۲۶/۰۸/۳۰ = ۱۴۴۸/۰۳/۱۷',ur:'مثال: ۱۴۰۵/۰۶/۰۸ = ۲۰۲۶/۰۸/۳۰ = ۱۴۴۸/۰۳/۱۷',en:'Example: 1405/06/08 = 2026/08/30 = 1448/03/17'},
+  'سمه نېټه ولیکئ؛ مثال: ۱۴۰۵/۰۶/۰۸.': {fa:'تاریخ معتبر وارد کنید؛ مثال: ۱۴۰۵/۰۶/۰۸.',ar:'أدخل تاريخاً صحيحاً؛ مثال: ۱۴۰۵/۰۶/۰۸.',ur:'درست تاریخ لکھیں؛ مثال: ۱۴۰۵/۰۶/۰۸۔',en:'Enter a valid date; example: 1405/06/08.'},
+  'درې واړه برابرې نېټې': {fa:'هر سه تاریخ معادل',ar:'التواريخ الثلاثة المتطابقة',ur:'تینوں مساوی تاریخیں',en:'Equivalent Dates'},
+  'د نمونې بدلون': {fa:'نمونه تبدیل',ar:'مثال التحويل',ur:'تبدیلی کی مثال',en:'Conversion Example'},
   'آنلاین مالي سیستم': {fa:'سیستم مالی آنلاین',ar:'النظام المالي عبر الإنترنت',ur:'آن لائن مالی نظام',en:'Online Finance System'},
   'آنلاین • خوندي • RTL': {fa:'آنلاین • امن • RTL',ar:'متصل • آمن • RTL',ur:'آن لائن • محفوظ • RTL',en:'Online • Secure • RTL'},
   'مالي کنټرول': {fa:'کنترل مالی',ar:'التحكم المالي',ur:'مالی کنٹرول',en:'Finance Control'},
@@ -710,7 +804,7 @@ function translateRenderedUi(lang:Lang){
   while(node){
     const parent=node.parentElement;
     if(parent&&!['SCRIPT','STYLE','INPUT','TEXTAREA'].includes(parent.tagName)){
-      const raw=node.nodeValue||''; const lead=raw.match(/^\\s*/)?.[0]||''; const tail=raw.match(/\\s*$/)?.[0]||'';
+      const raw=node.nodeValue||''; const lead=raw.match(/^\s*/)?.[0]||''; const tail=raw.match(/\s*$/)?.[0]||'';
       const body=raw.slice(lead.length,raw.length-tail.length);
       if(body){const x=translateStatic(body,lang); if(x!==body) node.nodeValue=lead+x+tail;}
     }
@@ -885,9 +979,9 @@ function App() {
         const extraordinary = roundMoney(record.extraordinaryAllowance || 0);
         const otherDeductions = roundMoney(record.otherDeductions || 0);
         const gross = roundMoney(base + recurring + extraordinary);
-        const taxAmount = salaryTaxByInstitution(base, record.institution || DEFENSE_TAX_PROFILE_LABEL);
+        const taxAmount = salaryTaxByInstitution(gross, record.institution || DEFENSE_TAX_PROFILE_LABEL);
         const totalDeductions = roundMoney(taxAmount + otherDeductions);
-        return { ...record, taxableIncome: base, taxAmount, totalDeductions, fees: totalDeductions, gross, net: roundMoney(gross - totalDeductions) };
+        return { ...record, taxableIncome: gross, taxAmount, totalDeductions, fees: totalDeductions, gross, net: roundMoney(gross - totalDeductions) };
       });
       setPeople(loadedPeople);
       setPayroll(loadedPayroll);
@@ -1102,6 +1196,7 @@ function App() {
             ['personnel', Users, t.personnel],
             ['payroll', Calculator, t.payroll],
             ['salaryInfo', WalletCards, 'معاشاتو معلومات'],
+            ['calendar', CalendarDays, translateStatic('د نېټو بدلون', activeUiLang)],
             ['salaryRules', ClipboardList, t.salaryRules],
             ['transactions', ReceiptText, t.transactions],
             ['accounts', Landmark, t.accounts],
@@ -1207,6 +1302,7 @@ function App() {
             />
           )}
           {!loading && section === 'salaryInfo' && <SalaryInfoPage />}
+          {!loading && section === 'calendar' && <CalendarConverter />}
           {!loading && section === 'salaryRules' && <SalaryRulesPage />}
           {!loading && section === 'payroll' && (
             <PayrollPage
@@ -1274,6 +1370,7 @@ function sectionTitle(s: Section, t: any) {
       personnel: t.personnel,
       payroll: t.payroll,
       salaryRules: t.salaryRules,
+      calendar: translateStatic('د نېټو بدلون', activeUiLang),
       transactions: t.transactions,
       accounts: t.accounts,
       ledger: t.ledger,
@@ -1374,6 +1471,79 @@ function Login({ lang, setLang, theme, setTheme, t, onSignIn }: any) {
   );
 }
 
+function CalendarConverter() {
+  const [source, setSource] = useState<CalendarKind>('solar');
+  const [dateValue, setDateValue] = useState('1405/06/08');
+  const [result, setResult] = useState<CalendarConversion|null>(() => convertCalendarDate('1405/06/08','solar'));
+  const [error, setError] = useState('');
+
+  function convert(event:any) {
+    event.preventDefault();
+    const converted = convertCalendarDate(dateValue, source);
+    if (!converted) {
+      setResult(null);
+      setError(translateStatic('سمه نېټه ولیکئ؛ مثال: ۱۴۰۵/۰۶/۰۸', activeUiLang));
+      return;
+    }
+    setError('');
+    setResult(converted);
+  }
+
+  const labels:{kind:CalendarKind; label:string; symbol:string}[] = [
+    {kind:'solar',label:'هجري شمسي (لمریز)',symbol:'☀'},
+    {kind:'lunar',label:'هجري قمري (ام القری)',symbol:'☾'},
+    {kind:'gregorian',label:'میلادي (عیسوي)',symbol:'▦'},
+  ];
+
+  return (
+    <Panel title={translateStatic('د نېټو بدلون',activeUiLang)}>
+      <div className="calendar-converter-intro">
+        <CalendarDays size={30}/>
+        <div>
+          <h2>{translateStatic('د درې واړو تقویمونو نېټې یو بل ته واړوئ',activeUiLang)}</h2>
+          <p>{translateStatic('د نېټې بڼه: کال/میاشت/ورځ',activeUiLang)}</p>
+        </div>
+      </div>
+      <form className="calendar-converter-form" onSubmit={convert}>
+        <label>
+          {translateStatic('د نېټې سرچینه',activeUiLang)}
+          <select value={source} onChange={e=>setSource(e.target.value as CalendarKind)}>
+            {labels.map(item=><option key={item.kind} value={item.kind}>{translateStatic(item.label,activeUiLang)}</option>)}
+          </select>
+        </label>
+        <label>
+          {translateStatic('نېټه ولیکئ',activeUiLang)}
+          <input value={dateValue} onChange={e=>setDateValue(e.target.value)} inputMode="numeric" placeholder={translateStatic('مثال: ۱۴۰۵/۰۶/۰۸',activeUiLang)} />
+        </label>
+        <button className="primary" type="submit"><CalendarDays size={17}/>{translateStatic('بدلون ترسره کړئ',activeUiLang)}</button>
+      </form>
+      {error && <div className="notice warn">{error}</div>}
+      {result && (
+        <div className="calendar-converter-result">
+          <div className="calendar-result-heading">
+            <div><span className="eyebrow">{translateStatic('د بدلون پایله',activeUiLang)}</span><h3>{translateStatic('درې واړه برابرې نېټې',activeUiLang)}</h3></div>
+            <CheckCircle2 size={25}/>
+          </div>
+          <div className="calendar-result-grid">
+            {labels.map(item=>(
+              <div className={'calendar-result-card calendar-'+item.kind} key={item.kind}>
+                <span>{item.symbol} {translateStatic(item.label,activeUiLang)}</span>
+                <strong dir="ltr">{result[item.kind]}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="calendar-example">
+        <b>{translateStatic('د نمونې بدلون',activeUiLang)}</b>
+        <strong dir="ltr">1405/06/08 = 2026/08/30 = 1448/03/17</strong>
+        <small>{translateStatic('بېلګه: ۱۴۰۵/۰۶/۰۸ = ۲۰۲۶/۰۸/۳۰ = ۱۴۴۸/۰۳/۱۷',activeUiLang)}</small>
+      </div>
+      <div className="notice warn">{translateStatic('د قمري میاشتې نېټه د ام القری تقویم له مخې ده؛ د محلي سپوږمۍ لیدلو له مخې یوه ورځ توپیر ممکن دی.',activeUiLang)}</div>
+    </Panel>
+  );
+}
+
 function HomePage({ t, people, totals, onGo }: any) {
   const cards = [
     ['totalPeople', Users, people.length],
@@ -1446,7 +1616,7 @@ function OfflineSalaryHome() {
 function SalaryInfoPage() {
   const saved=(()=>{try{return JSON.parse(localStorage.getItem('finance_salary_info_draft')||'{}')}catch{return {}}})();
   const digits=(v:string)=>String(v||'').replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-  const normMonth=(v:string)=>{const r=digits(v).replace('/','-');if(/^1405-\\d{2}$/.test(r))return r.slice(5);return /^\\d{1,2}$/.test(r)?r.padStart(2,'0'):'01';};
+  const normMonth=(v:string)=>{const r=digits(v).replace('/','-');if(/^1405-\d{2}$/.test(r))return r.slice(5);return /^\\d{1,2}$/.test(r)?r.padStart(2,'0'):'01';};
   const current=getCurrentSolarYearMonth();
   const [name,setName]=useState(saved.name||'');
   const [employeeNo,setEmployeeNo]=useState(saved.employeeNo||'');
@@ -1489,7 +1659,7 @@ function SalaryInfoPage() {
     const feedingDaysForPeriod=attendanceStatus==='حاضر'?period.days:Math.max(0,period.days-monthExceptionDays);
     const feeding=roundMoney(feedingDaysForPeriod*DAILY_FEEDING_ALLOWANCE);
     const totalBeforeTax=roundMoney(Math.max(0,base+service+education+professional+feeding));
-    const tax=totalBeforeTax<=10000?0:totalBeforeTax<=100000?roundMoney((totalBeforeTax-10000)*0.10):roundMoney(9000+(totalBeforeTax-100000)*0.15);
+    const tax=salaryTaxByInstitution(totalBeforeTax, DEFENSE_TAX_PROFILE_LABEL);
     return {...period,monthExceptionDays,paidDays,base,service,education,professional,feeding,feedingDays:feedingDaysForPeriod,totalBeforeTax,tax,netBeforeBank:roundMoney(totalBeforeTax-tax)};
   });
   const totals=monthlyBreakdown.reduce((a,r)=>({base:roundMoney(a.base+r.base),service:roundMoney(a.service+r.service),education:roundMoney(a.education+r.education),professional:roundMoney(a.professional+r.professional),feeding:roundMoney(a.feeding+r.feeding),totalBeforeTax:roundMoney(a.totalBeforeTax+r.totalBeforeTax),tax:roundMoney(a.tax+r.tax)}),{base:0,service:0,education:0,professional:0,feeding:0,totalBeforeTax:0,tax:0});
@@ -1712,7 +1882,7 @@ function Personnel({ t, people, refresh, toast, userEmail, isAdmin }: any) {
         </label>
         <label>{t.extraordinary}<input className="big-field" type="number" min="0" value={x.extraordinary} onChange={e => setX({ ...x, extraordinary: e.target.value })} /></label>
         <label>نور کسرات <input className="big-field" type="number" min="0" value={x.otherDeductions} onChange={e => setX({ ...x, otherDeductions: e.target.value })} /></label>
-        <div className="notice warn payroll-tax-profile"><BookOpen size={17} /><span>{institution === 'د ملي دفاع وزارت' ? 'د ملي دفاع وزارت پروفایل: ستاسې ورکړی داخلي نورم — تر ۱۰,۰۰۰ معاف، ۱۰,۰۰۱ تر ۱۰۰,۰۰۰ = ۱۰٪، له ۱۰۰,۰۰۰ پورته = ۱۵٪.' : 'د دې وزارت/ادارې لپاره د مالیې وزارت/عوایدو ریاست د عامه معاشي لارښود عمومي موضوعي مالیه کارول کېږي.'}</span></div>
+        <div className="notice warn payroll-tax-profile"><BookOpen size={17} /><span>مالیه د اساسي معاش، ثابتو او ټولو نورو امتیازونو پر مجموعې حسابېږي: تر ۱۰,۰۰۰ افغانۍ معاف؛ له ۱۰,۰۰۰ څخه پورته تر ۱۰۰,۰۰۰ پورې ۱۰٪؛ له ۱۰۰,۰۰۰ پورته ۱۵٪.</span></div>
         <div className="calc-box payroll-calc"><span>مشمول معاش</span><b>{money(gross)}</b><span>اتومات موضوعي مالیه</span><b>{money(taxAmount)}</b><span>نور کسرات</span><b>{money(otherDeductions)}</b><span>ټول کسرات</span><b>{money(totalDeductions)}</b><span>{t.net}</span><b>{money(net)}</b></div>
         <div className="modal-actions"><button type="button" className="ghost" onClick={() => setOpen(false)}>{t.cancel}</button><button className="primary">{editId ? 'سمول' : t.save}</button></div>
       </form></Modal>}
@@ -1949,30 +2119,21 @@ const DEFENSE_TAX_PROFILE_LABEL = 'د ملي دفاع وزارت';
 
 function grossUpNetSalary(netAmount: number, institution: string) {
   const targetNet = Math.max(0, roundMoney(netAmount));
-  if (institution === DEFENSE_TAX_PROFILE_LABEL) {
-    if (targetNet <= 10000) return targetNet;
-    if (targetNet <= 90000) return roundMoney(targetNet / 0.9);
-    return roundMoney(targetNet / 0.85);
-  }
-  if (targetNet <= 5000) return targetNet;
-  if (targetNet <= 12350) return roundMoney((targetNet - 100) / 0.98);
-  if (targetNet <= 91100) return roundMoney((targetNet - 1100) / 0.9);
-  return roundMoney((targetNet - 11100) / 0.8);
+  if (targetNet <= 10000) return targetNet;
+  if (targetNet <= 90000) return roundMoney(targetNet / 0.9);
+  return roundMoney(targetNet / 0.85);
 }
 
 function generalSalaryWithholdingTaxMonthly(amount: number) {
   const taxable = Math.max(0, roundMoney(amount));
-  if (taxable <= 5000) return 0;
-  if (taxable <= 12500) return roundMoney((taxable - 5000) * 0.02);
-  if (taxable <= 100000) return roundMoney(150 + (taxable - 12500) * 0.1);
-  return roundMoney(8900 + (taxable - 100000) * 0.2);
+  if (taxable <= 10000) return 0;
+  return roundMoney(taxable * (taxable <= 100000 ? 0.10 : 0.15));
 }
 
 function defenseSalaryTaxInternal(amount: number) {
   const taxable = Math.max(0, roundMoney(amount));
   if (taxable <= 10000) return 0;
-  if (taxable <= 100000) return roundMoney(taxable * 0.1);
-  return roundMoney(taxable * 0.15);
+  return roundMoney(taxable * (taxable <= 100000 ? 0.10 : 0.15));
 }
 
 function salaryTaxByInstitution(amount: number, institution: string) {
@@ -2007,8 +2168,6 @@ function SalaryRulesPage() {
   const selectedMilitary = PUBLISHED_MILITARY_SALARIES_1405_TABLE[militaryIndex];
   const civilianRef = CIVILIAN_VISIBLE_1405_TABLE[civilianIndex];
   const standardNetSalary = sector === 'security' ? (selectedMilitary?.[1] || 0) : (civilianRef?.amount || 0);
-  const grossEquivalentBase = grossUpNetSalary(standardNetSalary, institution);
-  const baseSalary = grossEquivalentBase;
   const educationAmount = num(education);
   const serviceAmount = serviceTenureAllowance(num(serviceYears));
   const fixedAllowances = [
@@ -2024,9 +2183,11 @@ function SalaryRulesPage() {
     num(travel),
     num(food),
   ].reduce((sum, value) => sum + value, 0);
-  const gross = roundMoney(grossEquivalentBase + fixedAllowances);
-  const tax = roundMoney(grossEquivalentBase - standardNetSalary);
-  const net = roundMoney(standardNetSalary + fixedAllowances);
+  const targetTakeHome = roundMoney(standardNetSalary + fixedAllowances);
+  const gross = grossUpNetSalary(targetTakeHome, institution);
+  const baseSalary = roundMoney(Math.max(0, gross - fixedAllowances));
+  const tax = salaryTaxByInstitution(gross, institution);
+  const net = roundMoney(gross - tax);
   const months = Math.min(24, Math.max(1, Math.floor(num(periodMonths) || 1)));
   const periodGross = roundMoney(gross * months);
   const periodTax = roundMoney(tax * months);
