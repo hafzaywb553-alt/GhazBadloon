@@ -178,9 +178,20 @@ async function ledgerPayload() {
   }
 
   for (const x of payroll) {
-    const gross = moneyNumber(x.gross) || 0;
-    const net = moneyNumber(x.net) || 0;
-    const fees = moneyNumber(x.fees) || 0;
+    const storedGross = moneyNumber(x.gross) || 0;
+    const componentGross = roundMoney(
+      (moneyNumber(x.baseSalary) || 0)
+      + (moneyNumber(x.recurringAllowance) || 0)
+      + (moneyNumber(x.extraordinaryAllowance) || 0)
+    );
+    const gross = componentGross > 0 ? componentGross : storedGross;
+    const storedTax = moneyNumber(x.taxAmount);
+    const storedDeductions = moneyNumber(x.totalDeductions ?? x.fees) || 0;
+    const otherDeductions = moneyNumber(x.otherDeductions)
+      ?? Math.max(0, roundMoney(storedDeductions - (storedTax ?? 0)));
+    const taxAmount = salaryTaxByInstitution(gross, String(x.institution || DEFENSE_TAX_PROFILE_LABEL));
+    const fees = roundMoney(taxAmount + otherDeductions);
+    const net = roundMoney(Math.max(0, gross - fees));
     const ref = `PR-${String(x.id).slice(0, 8)}`;
     const month = String(x.month || '');
     const date = /^\d{4}-\d{2}$/.test(month) ? month + '-01' : now().slice(0, 10);
