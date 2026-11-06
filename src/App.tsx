@@ -2118,7 +2118,7 @@ const LICENSED_BANKS: Array<[string, string, string, string]> = [
 
 const DEFENSE_TAX_PROFILE_LABEL = 'د ملي دفاع وزارت';
 
-function grossUpNetSalary(netAmount: number, institution: string) {
+function grossUpNetSalary(netAmount: number) {
   const targetNet = Math.max(0, roundMoney(netAmount));
   if (targetNet <= 10000) return targetNet;
   if (targetNet <= 90000) return roundMoney(targetNet / 0.9);
@@ -2185,7 +2185,7 @@ function SalaryRulesPage() {
     num(food),
   ].reduce((sum, value) => sum + value, 0);
   const targetTakeHome = roundMoney(standardNetSalary + fixedAllowances);
-  const gross = grossUpNetSalary(targetTakeHome, institution);
+  const gross = grossUpNetSalary(targetTakeHome);
   const baseSalary = roundMoney(Math.max(0, gross - fixedAllowances));
   const tax = salaryTaxByInstitution(gross, institution);
   const net = roundMoney(gross - tax);
@@ -2349,7 +2349,7 @@ function SalaryRulesPage() {
       <div className="rules-section">
         <div className="rules-section-head"><div><h3>۴ ـ د معاش مالیه</h3><p>موضوعي مالیه د مالیې تابع میاشتني معاش پر بنسټ اتومات محاسبه کېږي. د څو میاشتو محاسبه د هرې میاشتې جلا حسابونه جمع کوي.</p></div></div>
         <div className="calc-box rules-calc">
-          <span>د نورم د مالیې مخکې معادل معاش</span><b>{money(grossEquivalentBase)}</b>
+          <span>د معاش او ټولو امتیازونو ناخالصه مجموعه</span><b>{money(gross)}</b>
           <span>موضوعي مالیه — ۱ میاشت</span><b>{money(tax)}</b>
           <span>له مالیې وروسته خالص — ۱ میاشت</span><b>{money(net)}</b>
         </div>
@@ -2357,26 +2357,15 @@ function SalaryRulesPage() {
           <label>څو میاشتې محاسبه؟
             <input className="big-field" type="number" min="1" max="24" value={periodMonths} onChange={e => setPeriodMonths(e.target.value)} />
           </label>
-          <div className="calc-box rules-calc"><span>د {months} میاشتو خالص معاش</span><b>{money(periodNet)}</b><span>د {months} میاشتو معلوماتي مالیه</span><b>{money(periodTax)}</b><span>د {months} میاشتو د مالیې مخکې معادل</span><b>{money(grossEquivalentBase * months)}</b></div>
+          <div className="calc-box rules-calc"><span>د {months} میاشتو خالص معاش</span><b>{money(periodNet)}</b><span>د {months} میاشتو معلوماتي مالیه</span><b>{money(periodTax)}</b><span>د {months} میاشتو ناخالصه مجموعه</span><b>{money(periodGross)}</b></div>
         </div>
         <div className="notice ok"><CheckCircle2 size={19} /><span>د څو میاشتو مجموعه د مساوي میاشتني معاش لپاره د هرې میاشتې جلا مالیې د مجموعې په توګه محاسبه کېږي.</span></div>
-        {institution === DEFENSE_TAX_PROFILE_LABEL ? (
-          <>
-            <div className="notice warn"><AlertTriangle size={18} /><span>د ملي دفاع وزارت: دا د مالیې پروفایل ستاسې ورکړی داخلي نورم دی؛ د دې ځانګړي نورم اوسنی رسمي عامه سند ما ونه موند.</span></div>
-            <div className="tax-brackets">
-              <div><b>۰٪</b><span>تر ۱۰,۰۰۰</span></div>
-              <div><b>۱۰٪</b><span>۱۰,۰۰۱ – ۱۰۰,۰۰۰</span></div>
-              <div><b>۱۵٪</b><span>له ۱۰۰,۰۰۰ پورته</span></div>
-            </div>
-          </>
-        ) : (
-          <div className="tax-brackets">
-            <div><b>۰٪</b><span>تر ۵,۰۰۰</span></div>
-            <div><b>۲٪</b><span>۵,۰۰۱ – ۱۲,۵۰۰</span></div>
-            <div><b>۱۰٪ + ۱۵۰</b><span>۱۲,۵۰۱ – ۱۰۰,۰۰۰</span></div>
-            <div><b>۲۰٪ + ۸,۹۰۰</b><span>له ۱۰۰,۰۰۰ پورته</span></div>
-          </div>
-        )}
+        <div className="notice warn"><AlertTriangle size={18} /><span>د مالیې کچه د ټولو کارکوونکو لپاره د اساسي معاش، ثابتو او نورو امتیازونو پر ټولیزې میاشتني مجموعې محاسبه کېږي.</span></div>
+        <div className="tax-brackets">
+          <div><b>۰٪</b><span>له ۱ څخه تر ۱۰,۰۰۰ افغانۍ</span></div>
+          <div><b>۱۰٪</b><span>۱۰,۰۰۱ – ۱۰۰,۰۰۰ افغانۍ</span></div>
+          <div><b>۱۵٪</b><span>له ۱۰۰,۰۰۰ پورته</span></div>
+        </div>
       </div>
 
       <div className="rules-section">
