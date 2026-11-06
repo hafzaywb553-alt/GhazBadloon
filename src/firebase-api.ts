@@ -33,6 +33,11 @@ function moneyNumber(value: unknown): number | null {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function validDate(value: unknown) {
   const text = String(value ?? '').trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(text) && !Number.isNaN(Date.parse(text + 'T00:00:00Z'));
@@ -61,7 +66,7 @@ function withOwner(record: Record<string, unknown>, fallbackEmail = '') {
   };
 }
 
-async function listCollection(name: string, scoped = true) {
+async function listCollection(name: string, scoped = true): Promise<Array<Record<string, unknown> & { id: string }>> {
   const ctx = currentIdentity();
   const source = collection(db, name);
   const q = scoped && !ctx.admin ? query(source, where('userId', '==', ctx.uid)) : source;
@@ -264,7 +269,7 @@ async function apiGet(path: string) {
 }
 
 async function apiPost(path: string, body: Record<string, unknown> = {}) {
-  const { resource } = parsePath(path);
+  const { resource, id } = parsePath(path);
 
   if (resource === 'profile') {
     const ctx = currentIdentity();
