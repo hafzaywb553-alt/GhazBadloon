@@ -98,17 +98,16 @@ async function audit(action: string, details: Record<string, unknown> = {}) {
 
 function generalSalaryWithholdingTaxMonthly(amount: number) {
   const taxable = Math.max(0, moneyNumber(amount) || 0);
-  if (taxable <= 5000) return 0;
-  if (taxable <= 12500) return Math.round((taxable - 5000) * 0.02 * 100) / 100;
-  if (taxable <= 100000) return Math.round((150 + (taxable - 12500) * 0.1) * 100) / 100;
-  return Math.round((8900 + (taxable - 100000) * 0.2) * 100) / 100;
+  if (taxable <= 10000) return 0;
+  const rate = taxable <= 100000 ? 0.10 : 0.15;
+  return Math.round((taxable * rate + Number.EPSILON) * 100) / 100;
 }
 
 function defenseSalaryTaxInternal(amount: number) {
   const taxable = Math.max(0, moneyNumber(amount) || 0);
   if (taxable <= 10000) return 0;
-  if (taxable <= 100000) return Math.round(taxable * 0.1 * 100) / 100;
-  return Math.round(taxable * 0.15 * 100) / 100;
+  const rate = taxable <= 100000 ? 0.10 : 0.15;
+  return Math.round((taxable * rate + Number.EPSILON) * 100) / 100;
 }
 
 function salaryTaxByInstitution(amount: number, institution: string) {
@@ -304,7 +303,7 @@ async function apiPost(path: string, body: Record<string, unknown> = {}) {
     const otherDeductions = moneyNumber(body.otherDeductions) || 0;
     const institution = String(body.institution || DEFENSE_TAX_PROFILE_LABEL);
     const gross = Math.round((baseSalary + recurringAllowance + extraordinaryAllowance + Number.EPSILON) * 100) / 100;
-    const taxableIncome = baseSalary;
+    const taxableIncome = gross;
     const taxAmount = salaryTaxByInstitution(taxableIncome, institution);
     const totalDeductions = Math.round((taxAmount + otherDeductions + Number.EPSILON) * 100) / 100;
     const net = Math.round((gross - totalDeductions + Number.EPSILON) * 100) / 100;
@@ -416,7 +415,7 @@ async function apiPut(path: string, body: Record<string, unknown> = {}) {
     }
 
     const gross = Math.round((baseSalary + recurringAllowance + extraordinaryAllowance + Number.EPSILON) * 100) / 100;
-    const taxableIncome = baseSalary;
+    const taxableIncome = gross;
     const taxAmount = salaryTaxByInstitution(taxableIncome, institution);
     const totalDeductions = Math.round((taxAmount + otherDeductions + Number.EPSILON) * 100) / 100;
     const net = Math.round((gross - totalDeductions + Number.EPSILON) * 100) / 100;
