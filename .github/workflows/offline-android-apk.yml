@@ -91,6 +91,12 @@ jobs:
       - name: Generate native Android project
         run: npx cap add android
 
+      - name: Generate Android launcher icons
+        run: npx capacitor-assets generate --android
+
+      - name: Sync offline app into Android
+        run: npx cap sync android
+
       - name: Remove Android network permissions
         run: |
           python - <<'PY'
@@ -115,11 +121,6 @@ jobs:
           print("Manifest merge rules will remove INTERNET and ACCESS_NETWORK_STATE.")
           PY
 
-      - name: Generate Android launcher icons
-        run: npx capacitor-assets generate --android
-
-      - name: Sync offline app into Android
-        run: npx cap sync android
 
       - name: Set Android version number
         env:
