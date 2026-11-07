@@ -1,0 +1,140 @@
+name: Build GhazBadloon Android APK
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, build/android-apk-capacitor-20261107]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build signed Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.21.1
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install project dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build the web application
+        run: npm run build
+
+      - name: Prepare the official app logo for Android
+        run: |
+          mkdir -p assets
+          cp public/resources/finance-logo.png assets/icon-only.png
+          cp public/resources/finance-logo.png assets/icon-foreground.png
+          file assets/icon-only.png
+
+      - name: Generate the Android project
+        run: npx cap add android
+
+      - name: Generate Android launcher icons
+        run: npx capacitor-assets generate --android
+
+      - name: Sync web assets into Android
+        run: npx cap sync android
+
+      - name: Set Android version number
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          gradle = Path("android/app/build.gradle")
+          source = gradle.read_text()
+          build_number = os.environ["BUILD_NUMBER"]
+          source, code_count = re.subn(
+              r'(?m)^(\s*versionCode\s+)\d+',
+              lambda m: m.group(1) + build_number,
+              source,
+              count=1,
+          )
+          source, name_count = re.subn(
+              r"""(?m)^(\s*versionName\s+)['"][^'"]+['"]""",
+              lambda m: m.group(1) + '"1.0.' + build_number + '"',
+              source,
+              count=1,
+          )
+          if code_count != 1 or name_count != 1:
+              raise SystemExit("Could not locate Android versionCode/versionName in generated Gradle file.")
+          gradle.write_text(source)
+          print(f"Android version: 1.0.{build_number} (code {build_number})")
+          PY
+
+      - name: Restore persistent debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ghazbadloon-android-debug-keystore-v1
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Verify and prepare APK
+        run: |
+          mkdir -p dist-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/GhazBadloon.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose dist-apk/GhazBadloon.apk
+          ls -lh dist-apk/GhazBadloon.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhazBadloon-Android-APK
+          path: dist-apk/GhazBadloon.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish direct APK download
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-apk-${{ github.run_number }}
+          name: GhazBadloon Android APK ${{ github.run_number }}
+          body: |
+            Installable Android debug-signed APK for the GhazBadloon Finance Management app.
+            Package: com.hafzaywb553.ghazbadloon
+            Version: 1.0.${{ github.run_number }}
+            This APK is intended for direct testing and distribution, not Play Store publication.
+          files: dist-apk/GhazBadloon.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build summary
+        if: always()
+        run: |
+          {
+            echo "## GhazBadloon Android APK"
+            echo "- Package: com.hafzaywb553.ghazbadloon"
+            echo "- Build: ${{ github.run_number }}"
+            echo "- APK: GhazBadloon.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
