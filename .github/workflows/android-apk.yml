@@ -69,13 +69,13 @@ jobs:
           source = gradle.read_text()
           build_number = os.environ["BUILD_NUMBER"]
           source, code_count = re.subn(
-              r'(?m)^(\\s*versionCode\\s+)\\d+',
+              r'(?m)^(\s*versionCode\s+)\d+',
               lambda m: m.group(1) + build_number,
               source,
               count=1,
           )
           source, name_count = re.subn(
-              r"""(?m)^(\\s*versionName\\s+)[\'"][^\'"]+[\'"]""",
+              r"""(?m)^(\s*versionName\s+)['"][^'"]+['"]""",
               lambda m: m.group(1) + '"1.0.' + build_number + '"',
               source,
               count=1,
