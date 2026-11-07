@@ -56,7 +56,7 @@ jobs:
 
           width = height = 1024
           pixel = bytes((7, 16, 12, 255))
-          scanline = b"\\x00" + pixel * width
+          scanline = b"\x00" + pixel * width
           raw = scanline * height
 
           def chunk(kind, data):
@@ -68,7 +68,7 @@ jobs:
               )
 
           png = (
-              b"\\x89PNG\\r\\n\\x1a\\n"
+              b"\x89PNG\r\n\x1a\n"
               + chunk(b"IHDR", struct.pack(">2I5B", width, height, 8, 6, 0, 0, 0))
               + chunk(b"IDAT", zlib.compress(raw, 9))
               + chunk(b"IEND", b"")
