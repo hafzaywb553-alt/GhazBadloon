@@ -39,24 +39,24 @@ footer{text-align:center;color:#718b8d;font-size:11px;padding:16px 4px 8px}.toas
 <button class="navbtn" data-page="backup">بیک‌اپ</button>
 </nav>
 <main id="view" aria-live="polite"></main>
-<footer>دا اپ معلومات یوازې په همدې موبایل کې ساتي؛ انټرنېټ او Firebase نه کاروي.</footer>
+<footer>دا اپ معلومات یوازې په همدې موبایل کې ساتي؛ د عادي کار لپاره انټرنېټ ته اړتیا نه لري.</footer>
 </div>
 <div class="toast" id="toast"></div>
 <script>
 (function(){
 'use strict';
 const KEY='ghazbadloon_offline_store_v1';
-const DEFAULT={employees:[],payroll:[],settings:{currency:'AFN'}};
+function emptyDB(){return {employees:[],payroll:[],settings:{currency:'AFN'}};}
 let db=load();
 let page='home';
 let editingEmployee=null;
 function load(){
  try{
   const raw=localStorage.getItem(KEY);
-  if(!raw)return structuredClone(DEFAULT);
+  if(!raw)return emptyDB();
   const value=JSON.parse(raw);
   return {employees:Array.isArray(value.employees)?value.employees:[],payroll:Array.isArray(value.payroll)?value.payroll:[],settings:value.settings||{currency:'AFN'}};
- }catch(e){return structuredClone(DEFAULT);}
+ }catch(e){return emptyDB();}
 }
 function save(){localStorage.setItem(KEY,JSON.stringify(db));}
 function uid(){return String(Date.now())+'-'+Math.random().toString(36).slice(2,9);}
@@ -217,7 +217,7 @@ document.addEventListener('click',function(e){
  if(action==='csv')downloadCsv();
  if(action==='clear-data'){
   if(!confirm('ټول کارکوونکي او معاشونه به د تل لپاره له همدې موبایل څخه پاک شي. دوام ورکړو؟'))return;
-  db=structuredClone(DEFAULT);save();editingEmployee=null;showPage('home');toast('معلومات پاک شول.');
+  db=emptyDB();save();editingEmployee=null;showPage('home');toast('معلومات پاک شول.');
  }
 });
 document.addEventListener('submit',function(e){
