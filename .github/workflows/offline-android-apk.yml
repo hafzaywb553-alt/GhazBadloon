@@ -97,30 +97,28 @@ jobs:
       - name: Sync offline app into Android
         run: npx cap sync android
 
-      - name: Remove Android network permissions
+      - name: Remove Android network permissions from the app manifest
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
           manifest = Path("android/app/src/main/AndroidManifest.xml")
           source = manifest.read_text()
-          android_ns = 'xmlns:android="http://schemas.android.com/apk/res/android"'
-          tools_ns = 'xmlns:tools="http://schemas.android.com/tools"'
-          if tools_ns not in source:
-              if android_ns not in source:
-                  raise SystemExit("Could not locate Android namespace in manifest.")
-              source = source.replace(android_ns, android_ns + " " + tools_ns, 1)
-          marker = "<application"
-          if marker not in source:
-              raise SystemExit("Could not locate application element in manifest.")
-          removals = (
-              '    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />\n'
+          source, internet_count = re.subn(
+              r'(?m)^\s*<uses-permission\s+android:name="android.permission.INTERNET"\s*/>\s*\n?',
+              '',
+              source,
           )
-          source = source.replace(marker, removals + marker, 1)
+          source, state_count = re.subn(
+              r'(?m)^\s*<uses-permission\s+android:name="android.permission.ACCESS_NETWORK_STATE"\s*/>\s*\n?',
+              '',
+              source,
+          )
+          if 'android.permission.INTERNET' in source:
+              raise SystemExit("INTERNET permission declaration remains in app manifest.")
           manifest.write_text(source)
-          print("Manifest merge rules will remove INTERNET and ACCESS_NETWORK_STATE.")
+          print(f"Removed {internet_count} INTERNET and {state_count} ACCESS_NETWORK_STATE declarations from app manifest.")
           PY
-
 
       - name: Set Android version number
         env:
