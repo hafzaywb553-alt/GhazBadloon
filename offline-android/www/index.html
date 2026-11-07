@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ps" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0b1720">
+<title>مالي مدیریت آفلاین</title>
+<style>
+:root{--bg:#0b1720;--panel:#142631;--panel2:#1b3440;--line:#28444f;--text:#edf5f3;--muted:#a2b9b8;--green:#29b77d;--green2:#176e52;--red:#dc6b68;--gold:#e4b95e;--blue:#66c8dc;--radius:18px}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;background:radial-gradient(circle at 80% -10%,#1a4045 0,transparent 35%),var(--bg);color:var(--text);font-family:Tahoma,Arial,sans-serif;min-height:100vh}
+button,input,select{font:inherit}button{cursor:pointer}.shell{max-width:900px;margin:0 auto;padding:16px 14px 35px}
+header{display:flex;align-items:center;gap:12px;padding:8px 2px 16px}.logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(145deg,#2bc58b,#12634e);display:grid;place-items:center;font-size:25px;box-shadow:0 8px 26px #0004}.brand h1{font-size:20px;margin:0 0 5px}.brand p{margin:0;font-size:12px;color:var(--muted)}.offline{margin-right:auto;border:1px solid #237f61;color:#8ce0bc;border-radius:30px;padding:7px 10px;font-size:11px;white-space:nowrap}
+nav{display:flex;gap:7px;overflow-x:auto;padding:4px 0 13px;scrollbar-width:none}nav::-webkit-scrollbar{display:none}.navbtn{flex:0 0 auto;border:1px solid var(--line);background:#10232c;color:var(--muted);padding:10px 13px;border-radius:13px;font-size:13px}.navbtn.active{background:var(--green2);border-color:#278f69;color:white}
+#view{min-height:55vh}.panel{background:linear-gradient(160deg,#162d38,#10212a);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:13px;box-shadow:0 12px 28px #0002}.panel h2{font-size:18px;margin:0 0 14px}.panel h3{font-size:15px;margin:0 0 10px}.muted{color:var(--muted)}.small{font-size:12px;line-height:1.7}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#10232c;border:1px solid var(--line);border-radius:15px;padding:14px}.stat span{display:block;color:var(--muted);font-size:12px;margin-bottom:8px}.stat strong{font-size:21px;display:block;overflow-wrap:anywhere}.stat.green strong{color:#7cdeb2}.stat.gold strong{color:#f3cf7d}.stat.blue strong{color:#86d8e7}
+form{display:grid;gap:12px}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:12px;color:var(--muted)}input,select{width:100%;min-width:0;border:1px solid #31505c;background:#0d1e27;color:var(--text);border-radius:12px;padding:12px 11px;outline:none}input:focus,select:focus{border-color:var(--green);box-shadow:0 0 0 2px #29b77d22}input::placeholder{color:#6e888d}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:0;border-radius:12px;padding:12px 15px;color:white;background:var(--green2);font-weight:700;font-size:13px}.btn.secondary{background:#243f4a;border:1px solid #355866;color:#e0eeec}.btn.danger{background:#602f32;color:#ffd6d4}.btn.gold{background:#705626;color:#fff1c7}.btn:disabled{opacity:.5;cursor:not-allowed}
+.list{display:grid;gap:8px}.rowitem{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:13px;padding:12px;background:#10232c}.rowitem strong{display:block;font-size:14px;margin-bottom:4px}.rowitem small{display:block;color:var(--muted);font-size:11px;line-height:1.7}.itemactions{display:flex;gap:6px;flex:0 0 auto}.iconbtn{border:1px solid var(--line);background:#1d3742;color:#e9f4f2;border-radius:9px;padding:8px 10px;font-size:12px}.empty{border:1px dashed #47616b;border-radius:14px;padding:22px;text-align:center;color:var(--muted);font-size:13px}
+.result{border:1px solid #287c60;background:#102d28;border-radius:15px;padding:14px;display:grid;gap:8px}.resultline{display:flex;justify-content:space-between;gap:8px;font-size:13px}.resultline.total{border-top:1px solid #2c6656;padding-top:10px;font-weight:800;font-size:16px}.resultline .number{direction:ltr;unicode-bidi:embed;font-variant-numeric:tabular-nums}
+.notice{border-radius:13px;padding:12px;background:#122b32;border:1px solid #28505a;color:#c7dddc;font-size:12px;line-height:1.8}.notice.warn{background:#322b19;border-color:#66532a;color:#f6df9a}.notice.ok{background:#123126;border-color:#286a50;color:#a3e6c6}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:13px}table{width:100%;border-collapse:collapse;min-width:600px;font-size:12px}th,td{padding:11px 9px;border-bottom:1px solid #29434c;text-align:right;white-space:nowrap}th{background:#1c3742;color:#cde0dd}td{color:#e5efed}tr:last-child td{border-bottom:0}
+.cards3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.calendarcard{background:#10232c;border:1px solid var(--line);border-radius:14px;padding:13px;min-width:0}.calendarcard span{font-size:11px;color:var(--muted);display:block;margin-bottom:8px}.calendarcard strong{font-size:17px;direction:ltr;unicode-bidi:embed;display:block;white-space:nowrap}
+footer{text-align:center;color:#718b8d;font-size:11px;padding:16px 4px 8px}.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#173a32;border:1px solid #358a66;color:#e4fff2;border-radius:13px;padding:12px 18px;box-shadow:0 10px 35px #0007;z-index:9;max-width:90%;font-size:13px;display:none}.toast.show{display:block}
+@media(max-width:600px){.shell{padding:12px 11px 24px}.brand h1{font-size:18px}.offline{font-size:10px;padding:6px 8px}.grid{gap:8px}.stat{padding:12px}.stat strong{font-size:18px}.formgrid{grid-template-columns:1fr}.field.full{grid-column:auto}.cards3{grid-template-columns:1fr}.calendarcard{display:flex;justify-content:space-between;align-items:center;gap:10px}.calendarcard span{margin:0}.calendarcard strong{font-size:18px}.rowitem{align-items:flex-start}.panel{padding:13px}}
+@media print{body{background:white;color:black}.shell{max-width:none;padding:0}header,nav,.no-print,footer{display:none!important}.panel,.stat,.rowitem{background:white;color:black;border:1px solid #ccc;box-shadow:none;break-inside:avoid}.muted,.rowitem small{color:#444}.tablewrap{overflow:visible}table{min-width:0}th,td{color:black;border-color:#ccc}.result{background:white;color:black;border:1px solid #777}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+<div class="logo" aria-hidden="true">؋</div>
+<div class="brand"><h1>مالي مدیریت آفلاین</h1><p>د کارکوونکو او معاشونو ساده محلي مدیریت</p></div>
+<div class="offline">● بې‌انټرنېټه</div>
+</header>
+<nav class="no-print">
+<button class="navbtn active" data-page="home">کور</button>
+<button class="navbtn" data-page="employees">کارکوونکي</button>
+<button class="navbtn" data-page="payroll">معاشونه</button>
+<button class="navbtn" data-page="calendar">د نېټو بدلون</button>
+<button class="navbtn" data-page="backup">بیک‌اپ</button>
+</nav>
+<main id="view" aria-live="polite"></main>
+<footer>دا اپ معلومات یوازې په همدې موبایل کې ساتي؛ د عادي کار لپاره انټرنېټ ته اړتیا نه لري.</footer>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+'use strict';
+const KEY='ghazbadloon_offline_store_v1';
+function emptyDB(){return {employees:[],payroll:[],settings:{currency:'AFN'}};}
+let db=load();
+let page='home';
+let editingEmployee=null;
+function load(){
+ try{
+  const raw=localStorage.getItem(KEY);
+  if(!raw)return emptyDB();
+  const value=JSON.parse(raw);
+  return {employees:Array.isArray(value.employees)?value.employees:[],payroll:Array.isArray(value.payroll)?value.payroll:[],settings:value.settings||{currency:'AFN'}};
+ }catch(e){return emptyDB();}
+}
+function save(){localStorage.setItem(KEY,JSON.stringify(db));}
+function uid(){return String(Date.now())+'-'+Math.random().toString(36).slice(2,9);}
+function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function num(v){const n=Number(String(v==null?'':v).replace(/,/g,''));return Number.isFinite(n)&&n>0?n:0;}
+function money(v){return num(v).toLocaleString('en-US',{maximumFractionDigits:2,minimumFractionDigits:0})+' ؋';}
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(function(){el.classList.remove('show');},2300);}
+function taxFor(gross){if(gross<=10000)return 0;return gross*(gross<=100000?0.10:0.15);}
+function showPage(p){
+ page=p;
+ document.querySelectorAll('.navbtn').forEach(function(b){b.classList.toggle('active',b.dataset.page===p);});
+ render();
+ window.scrollTo(0,0);
+}
+function render(){
+ const root=document.getElementById('view');
+ if(page==='home')root.innerHTML=homeView();
+ if(page==='employees')root.innerHTML=employeesView();
+ if(page==='payroll')root.innerHTML=payrollView();
+ if(page==='calendar')root.innerHTML=calendarView();
+ if(page==='backup')root.innerHTML=backupView();
+}
+function homeView(){
+ const totalPeople=db.employees.length;
+ const totalGross=db.payroll.reduce(function(s,x){return s+num(x.gross);},0);
+ const totalTax=db.payroll.reduce(function(s,x){return s+num(x.tax);},0);
+ const totalNet=db.payroll.reduce(function(s,x){return s+num(x.net);},0);
+ const recent=db.payroll.slice().sort(function(a,b){return String(b.createdAt).localeCompare(String(a.createdAt));}).slice(0,5);
+ return '<section class="panel"><h2>د مالي مدیریت لنډیز</h2><div class="grid">'+
+ '<div class="stat green"><span>ثبت شوي کارکوونکي</span><strong>'+totalPeople.toLocaleString('en-US')+'</strong></div>'+
+ '<div class="stat blue"><span>د معاشونو ثبتونه</span><strong>'+db.payroll.length.toLocaleString('en-US')+'</strong></div>'+
+ '<div class="stat gold"><span>ټول ناخالص معاش</span><strong>'+money(totalGross)+'</strong></div>'+
+ '<div class="stat"><span>ټوله محاسبه شوې مالیه</span><strong>'+money(totalTax)+'</strong></div>'+
+ '<div class="stat green"><span>ټول خالص معاش</span><strong>'+money(totalNet)+'</strong></div>'+
+ '</div></section>'+
+ '<section class="panel"><h2>چټک کارونه</h2><div class="actions no-print"><button class="btn" data-page="employees">+ کارکوونکی ثبت کړه</button><button class="btn secondary" data-page="payroll">معاش محاسبه کړه</button><button class="btn secondary" data-page="calendar">نېټه واړوه</button></div></section>'+
+ '<section class="panel"><h2>وروستي معاشونه</h2>'+(recent.length?'<div class="list">'+recent.map(payrollItem).join('')+'</div>':'<div class="empty">تر اوسه معاش نه دی ثبت شوی.</div>')+'</section>'+
+ '<div class="notice">معلومات په دې وسیله کې ساتل کېږي. د موبایل د بدلولو، اپ د حذفولو یا د اپ د معلوماتو د پاکولو مخکې د بیک‌اپ فایل جوړ کړه.</div>';
+}
+function employeesView(){
+ const rows=db.employees.slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+ return '<section class="panel"><h2>'+(editingEmployee?'د کارکوونکي معلومات بدلول':'نوی کارکوونکی ثبتول')+'</h2>'+
+ '<form id="employee-form"><input type="hidden" name="id" value="'+esc(editingEmployee?editingEmployee.id:'')+'">'+
+ '<div class="formgrid">'+
+ field('نوم او تخلص','name','text',editingEmployee?editingEmployee.name:'',true,'د کارکوونکي بشپړ نوم')+
+ field('د پرسونل/پېژندنې شمېره','personnel','text',editingEmployee?editingEmployee.personnel:'',false,'اختیاري')+
+ field('اداره یا څانګه','department','text',editingEmployee?editingEmployee.department:'',false,'د څانګې نوم')+
+ '<div class="field"><label>د کارکوونکي ډول</label><select name="category"><option value="نظامي" '+(editingEmployee&&editingEmployee.category==='نظامي'?'selected':'')+'>نظامي</option><option value="ملکي" '+(editingEmployee&&editingEmployee.category==='ملکي'?'selected':'')+'>ملکي</option></select></div>'+
+ field('اساسي میاشتنی معاش (افغانۍ)','baseSalary','number',editingEmployee?editingEmployee.baseSalary:'0',false,'0')+
+ field('ثابت میاشتني امتیازات (افغانۍ)','allowance','number',editingEmployee?editingEmployee.allowance:'0',false,'0')+
+ '</div><div class="actions"><button class="btn" type="submit">'+(editingEmployee?'بدلون خوندي کړه':'کارکوونکی ثبت کړه')+'</button>'+(editingEmployee?'<button type="button" class="btn secondary" data-action="cancel-edit">لغوه</button>':'')+'</div></form></section>'+
+ '<section class="panel"><h2>د کارکوونکو لېست ('+rows.length+')</h2>'+(rows.length?'<div class="list">'+rows.map(employeeItem).join('')+'</div>':'<div class="empty">تر اوسه کارکوونکی نه دی ثبت شوی.</div>')+'</section>';
+}
+function field(label,name,type,value,full,placeholder){
+ return '<div class="field '+(full?'full':'')+'"><label>'+esc(label)+'</label><input name="'+name+'" type="'+type+'" value="'+esc(value)+'" placeholder="'+esc(placeholder||'')+'" '+(type==='number'?'min="0" step="0.01"':'')+' '+(full?'required':'')+'></div>';
+}
+function employeeItem(x){
+ return '<div class="rowitem"><div><strong>'+esc(x.name)+'</strong><small>'+esc(x.category)+' · '+esc(x.department||'بې‌څانګې')+' · '+esc(x.personnel||'بې‌شمېرې')+'<br>اساسي معاش: '+money(x.baseSalary)+' | امتیاز: '+money(x.allowance)+'</small></div><div class="itemactions no-print"><button class="iconbtn" data-action="edit-employee" data-id="'+esc(x.id)+'">بدلول</button><button class="iconbtn" data-action="delete-employee" data-id="'+esc(x.id)+'">حذف</button></div></div>';
+}
+function payrollView(){
+ const employees=db.employees;
+ const selected=employees[0]||null;
+ const month=new Date().toISOString().slice(0,7);
+ const rows=db.payroll.slice().sort(function(a,b){return String(b.period).localeCompare(String(a.period));});
+ return '<section class="panel"><h2>د میاشتني معاش محاسبه او ثبت</h2>'+
+ (employees.length?'<form id="payroll-form"><div class="formgrid">'+
+ '<div class="field full"><label>کارکوونکی</label><select name="employeeId" id="pay-employee">'+employees.map(function(e){return '<option value="'+esc(e.id)+'">'+esc(e.name)+' — '+esc(e.personnel||e.department||'')+'</option>';}).join('')+'</select></div>'+
+ '<div class="field"><label>د معاش میاشت (میلادي)</label><input name="period" type="month" value="'+month+'" required></div>'+
+ field('اساسي معاش (افغانۍ)','baseSalary','number',selected.baseSalary,false,'0')+
+ field('ټول امتیازات (افغانۍ)','allowance','number',selected.allowance,false,'0')+
+ field('نورې کسرۍ، له مالیې وروسته (افغانۍ)','otherDeduction','number','0',false,'0')+
+ '</div><div class="notice">مالیه د اساسي معاش او ټولو امتیازونو پر مجموعې محاسبه کېږي: تر ۱۰٬۰۰۰ افغانۍ معاف؛ له ۱۰٬۰۰۰ پورته تر ۱۰۰٬۰۰۰ پورې ۱۰٪؛ له ۱۰۰٬۰۰۰ پورته ۱۵٪.</div>'+
+ '<div id="pay-preview" class="result">'+payPreview(num(selected.baseSalary),num(selected.allowance),0)+'</div>'+
+ '<div class="actions"><button class="btn" type="submit">معاش ثبت کړه</button><button class="btn secondary" type="button" data-action="print">چاپ</button></div></form>':'<div class="empty">لومړی د کارکوونکو برخه کې یو کارکوونکی ثبت کړه.</div>')+
+ '</section><section class="panel"><h2>د معاشونو سابقه ('+rows.length+')</h2>'+(rows.length?'<div class="tablewrap"><table><thead><tr><th>میاشت</th><th>کارکوونکی</th><th>ناخالص</th><th>مالیه</th><th>خالص</th><th>عمل</th></tr></thead><tbody>'+rows.map(function(x){return '<tr><td>'+esc(x.period)+'</td><td>'+esc(x.employeeName)+'</td><td>'+money(x.gross)+'</td><td>'+money(x.tax)+'</td><td>'+money(x.net)+'</td><td><button class="iconbtn no-print" data-action="delete-payroll" data-id="'+esc(x.id)+'">حذف</button></td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">د معاش سابقه نشته.</div>')+'</section>';
+}
+function payPreview(base,allowance,other){
+ const gross=base+allowance,tax=taxFor(gross),net=Math.max(0,gross-tax-other);
+ return '<div class="resultline"><span>اساسي معاش + امتیازات</span><b class="number">'+money(gross)+'</b></div>'+
+ '<div class="resultline"><span>مالیه</span><b class="number">'+money(tax)+'</b></div>'+
+ '<div class="resultline"><span>نورې کسرۍ</span><b class="number">'+money(other)+'</b></div>'+
+ '<div class="resultline total"><span>خالص د ورکړې معاش</span><b class="number">'+money(net)+'</b></div>';
+}
+function payrollItem(x){return '<div class="rowitem"><div><strong>'+esc(x.employeeName)+' · '+esc(x.period)+'</strong><small>ناخالص: '+money(x.gross)+' · مالیه: '+money(x.tax)+' · خالص: '+money(x.net)+'</small></div><span class="muted">'+esc(x.category||'')+'</span></div>';}
+function calendarView(){
+ return '<section class="panel"><h2>د نېټو بدلون</h2>'+
+ '<form id="calendar-form"><div class="formgrid">'+
+ '<div class="field"><label>د داخلېدونکې نېټې ډول</label><select name="source"><option value="solar">هجري شمسي</option><option value="lunar">هجري قمري (ام القری)</option><option value="gregorian">میلادي</option></select></div>'+
+ '<div class="field"><label>نېټه — کال/میاشت/ورځ</label><input name="date" id="calendar-date" value="1405/06/08" placeholder="1405/06/08" required dir="ltr"></div>'+
+ '</div><button class="btn" type="submit">درې واړه نېټې ښکاره کړه</button></form>'+
+ '<div id="calendar-output" style="margin-top:14px">'+calendarResult('1405/06/08','solar')+'</div>'+
+ '<div class="notice warn" style="margin-top:12px">قمري نېټه د ام القری د تقویم له مخې ده؛ د افغانستان د محلي سپوږمۍ لیدلو له مخې یوه ورځ توپیر ممکن دی.</div></section>';
+}
+function calendarResult(value,source){
+ const result=convertDate(value,source);
+ if(!result)return '<div class="notice warn">نېټه ناسمه ده. د کال/میاشت/ورځ بڼه وکاروه؛ لکه 1405/06/08.</div>';
+ return '<div class="cards3"><div class="calendarcard"><span>هجري شمسي</span><strong>'+result.solar+'</strong></div><div class="calendarcard"><span>هجري قمري</span><strong>'+result.lunar+'</strong></div><div class="calendarcard"><span>میلادي</span><strong>'+result.gregorian+'</strong></div></div>';
+}
+function normalizeDigits(v){return String(v).replace(/[۰-۹٠-٩]/g,function(d){const fa='۰۱۲۳۴۵۶۷۸۹'.indexOf(d);return String(fa>=0?fa:'٠١٢٣٤٥٦٧٨٩'.indexOf(d));});}
+function parseDate(v){
+ const m=normalizeDigits(v).trim().replace(/[.-]/g,'/').match(/^(\d{1,4})\/(\d{1,2})\/(\d{1,2})$/);
+ if(!m)return null;
+ const p={year:Number(m[1]),month:Number(m[2]),day:Number(m[3])};
+ if(p.year<1||p.month<1||p.month>12||p.day<1||p.day>31)return null;
+ return p;
+}
+function parts(date,kind){
+ const cal=kind==='solar'?'persian':kind==='lunar'?'islamic-umalqura':'gregory';
+ let f;
+ try{f=new Intl.DateTimeFormat('en-US-u-ca-'+cal+'-nu-latn',{timeZone:'UTC',year:'numeric',month:'numeric',day:'numeric'});}
+ catch(e){f=new Intl.DateTimeFormat('en-US-u-ca-islamic-nu-latn',{timeZone:'UTC',year:'numeric',month:'numeric',day:'numeric'});}
+ const o={};f.formatToParts(date).forEach(function(x){if(x.type==='year'||x.type==='month'||x.type==='day')o[x.type]=Number(x.value);});return o;
+}
+function dateFromInput(value,kind){
+ const p=parseDate(value);if(!p)return null;
+ if(kind==='gregorian'){
+  const d=new Date(Date.UTC(p.year,p.month-1,p.day));
+  if(d.getUTCFullYear()!==p.year||d.getUTCMonth()+1!==p.month||d.getUTCDate()!==p.day)return null;
+  return d;
+ }
+ const approx=kind==='solar'?p.year+621:Math.floor(p.year*0.970224+621);
+ const start=Date.UTC(approx-1,0,1);
+ for(let i=0;i<1100;i++){const d=new Date(start+i*86400000),q=parts(d,kind);if(q.year===p.year&&q.month===p.month&&q.day===p.day)return d;}
+ return null;
+}
+function fmt(date,kind){const p=parts(date,kind);return p.year+'/'+String(p.month).padStart(2,'0')+'/'+String(p.day).padStart(2,'0');}
+function convertDate(value,source){
+ const d=dateFromInput(value,source);if(!d)return null;
+ return {solar:fmt(d,'solar'),lunar:fmt(d,'lunar'),gregorian:fmt(d,'gregorian')};
+}
+function backupView(){
+ return '<section class="panel"><h2>د معلوماتو بیک‌اپ او بېرته راوستل</h2>'+
+ '<p class="muted small">د کارکوونکو او معاشونو معلومات د موبایل په محلي حافظه کې دي. د معلوماتو د خوندي ساتلو لپاره وخت په وخت بیک‌اپ جوړ کړه او فایل بل خوندي ځای ته انتقال کړه.</p>'+
+ '<div class="actions"><button class="btn" data-action="backup">بیک‌اپ ښکته کړه</button><button class="btn secondary" data-action="csv">د معاشونو CSV</button></div>'+
+ '<hr style="border:0;border-top:1px solid var(--line);margin:17px 0">'+
+ '<label class="field"><span class="muted small">د پخواني بیک‌اپ JSON فایل بېرته راوستل</span><input type="file" id="restore-file" accept=".json,application/json"></label>'+
+ '<div class="actions" style="margin-top:12px"><button class="btn danger" data-action="clear-data">ټول معلومات پاک کړه</button></div>'+
+ '<div class="notice warn" style="margin-top:14px">بیک‌اپ فایل د معاشونو او کارکوونکو حساس معلومات لري؛ یوازې په خوندي ځای کې یې وساته. د بیک‌اپ بېرته راوستل اوسني معلومات بدلوي.</div>'+
+ '</section><section class="panel"><h2>د اپ په اړه</h2><div class="small muted">نسخه ۱.۰ · آفلاین محلي اپ · د ننوتلو حساب، سرور او انټرنېټ ته اړتیا نه لري.</div><div class="notice ok" style="margin-top:10px">د کارکوونکو شمېر: '+db.employees.length+' · د معاشونو ثبتونه: '+db.payroll.length+'</div></section>';
+}
+document.addEventListener('click',function(e){
+ const nav=e.target.closest('[data-page]');
+ if(nav){showPage(nav.dataset.page);return;}
+ const b=e.target.closest('[data-action]');if(!b)return;
+ const action=b.dataset.action,id=b.dataset.id;
+ if(action==='edit-employee'){editingEmployee=db.employees.find(function(x){return x.id===id;})||null;showPage('employees');}
+ if(action==='cancel-edit'){editingEmployee=null;render();}
+ if(action==='delete-employee'){
+  if(!confirm('دا کارکوونکی او د هغه نوم به د پخوانیو معاشونو په ثبت کې پاتې شي. کارکوونکی حذف شي؟'))return;
+  db.employees=db.employees.filter(function(x){return x.id!==id;});save();toast('کارکوونکی حذف شو.');render();
+ }
+ if(action==='delete-payroll'){
+  if(!confirm('دا د معاش ثبت حذف شي؟'))return;
+  db.payroll=db.payroll.filter(function(x){return x.id!==id;});save();render();toast('د معاش ثبت حذف شو.');
+ }
+ if(action==='print')window.print();
+ if(action==='backup')downloadBackup();
+ if(action==='csv')downloadCsv();
+ if(action==='clear-data'){
+  if(!confirm('ټول کارکوونکي او معاشونه به د تل لپاره له همدې موبایل څخه پاک شي. دوام ورکړو؟'))return;
+  db=emptyDB();save();editingEmployee=null;showPage('home');toast('معلومات پاک شول.');
+ }
+});
+document.addEventListener('submit',function(e){
+ if(e.target.id==='employee-form'){
+  e.preventDefault();const f=new FormData(e.target),id=String(f.get('id')||'');
+  const item={id:id||uid(),name:String(f.get('name')||'').trim(),personnel:String(f.get('personnel')||'').trim(),department:String(f.get('department')||'').trim(),category:String(f.get('category')||'نظامي'),baseSalary:num(f.get('baseSalary')),allowance:num(f.get('allowance'))};
+  if(!item.name){toast('د کارکوونکي نوم ولیکه.');return;}
+  if(id){db.employees=db.employees.map(function(x){return x.id===id?item:x;});editingEmployee=null;toast('معلومات بدل او خوندي شول.');}
+  else{db.employees.push(item);toast('کارکوونکی ثبت شو.');}
+  save();render();
+ }
+ if(e.target.id==='payroll-form'){
+  e.preventDefault();const f=new FormData(e.target),emp=db.employees.find(function(x){return x.id===String(f.get('employeeId'));});
+  if(!emp){toast('کارکوونکی وټاکه.');return;}
+  const base=num(f.get('baseSalary')),allowance=num(f.get('allowance')),other=num(f.get('otherDeduction')),gross=base+allowance,tax=taxFor(gross),net=Math.max(0,gross-tax-other);
+  const period=String(f.get('period')||'');if(!period){toast('د معاش میاشت وټاکه.');return;}
+  db.payroll.push({id:uid(),employeeId:emp.id,employeeName:emp.name,category:emp.category,period:period,baseSalary:base,allowance:allowance,gross:gross,tax:tax,otherDeduction:other,net:net,createdAt:new Date().toISOString()});
+  save();toast('معاش ثبت شو.');render();
+ }
+ if(e.target.id==='calendar-form'){
+  e.preventDefault();const f=new FormData(e.target),out=document.getElementById('calendar-output');
+  out.innerHTML=calendarResult(String(f.get('date')||''),String(f.get('source')||'solar'));
+ }
+});
+document.addEventListener('change',function(e){
+ if(e.target.id==='pay-employee'){
+  const emp=db.employees.find(function(x){return x.id===e.target.value;});if(!emp)return;
+  const form=document.getElementById('payroll-form');form.elements.baseSalary.value=emp.baseSalary;form.elements.allowance.value=emp.allowance;updatePreview();
+ }
+ if(e.target.id==='restore-file'&&e.target.files&&e.target.files[0]){
+  const reader=new FileReader();
+  reader.onload=function(){
+   try{
+    const parsed=JSON.parse(String(reader.result||''));
+    if(!Array.isArray(parsed.employees)||!Array.isArray(parsed.payroll))throw new Error('format');
+    if(!confirm('بیک‌اپ به اوسنیو معلوماتو ځایناستی شي؟'))return;
+    db={employees:parsed.employees,payroll:parsed.payroll,settings:parsed.settings||{currency:'AFN'}};save();showPage('home');toast('بیک‌اپ بېرته راوستل شو.');
+   }catch(e){toast('دا بیک‌اپ سم JSON فایل نه دی.');}
+  };reader.readAsText(e.target.files[0]);e.target.value='';
+ }
+});
+document.addEventListener('input',function(e){
+ if(e.target.closest('#payroll-form'))updatePreview();
+});
+function updatePreview(){
+ const f=document.getElementById('payroll-form');if(!f)return;
+ const base=num(f.elements.baseSalary.value),allowance=num(f.elements.allowance.value),other=num(f.elements.otherDeduction.value);
+ document.getElementById('pay-preview').innerHTML=payPreview(base,allowance,other);
+}
+function download(name,content,type){
+ const blob=new Blob([content],{type:type}),url=URL.createObjectURL(blob),a=document.createElement('a');
+ a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url);},1500);
+}
+function downloadBackup(){
+ const payload={app:'GhazBadloon Offline',version:1,exportedAt:new Date().toISOString(),employees:db.employees,payroll:db.payroll,settings:db.settings};
+ download('GhazBadloon-Backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload,null,2),'application/json');
+ toast('د بیک‌اپ فایل جوړ شو.');
+}
+function downloadCsv(){
+ const rows=[['میاشت','کارکوونکی','اساسي معاش','امتیازات','ناخالص','مالیه','نورې کسرۍ','خالص']];
+ db.payroll.forEach(function(x){rows.push([x.period,x.employeeName,x.baseSalary,x.allowance,x.gross,x.tax,x.otherDeduction,x.net]);});
+ const csv='\uFEFF'+rows.map(function(r){return r.map(function(x){return '"'+String(x==null?'':x).replace(/"/g,'""')+'"';}).join(',');}).join('\r\n');
+ download('GhazBadloon-Payroll.csv',csv,'text/csv;charset=utf-8');
+ toast('د معاشونو CSV فایل جوړ شو.');
+}
+render();
+})();
+</script>
+</body>
+</html>

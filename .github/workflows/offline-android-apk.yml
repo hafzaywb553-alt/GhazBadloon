@@ -1,0 +1,205 @@
+name: Build fully offline GhazBadloon APK
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'offline-android/**'
+      - '.github/workflows/offline-android-apk.yml'
+      - 'public/resources/finance-logo.png'
+  push:
+    branches: [main]
+    paths:
+      - 'offline-android/**'
+      - '.github/workflows/offline-android-apk.yml'
+      - 'public/resources/finance-logo.png'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  offline-android:
+    name: Build and verify offline Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: offline-android
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.21.1
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          accept-android-sdk-licenses: true
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify app is truly offline and parse JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          html = Path("www/index.html").read_text()
+          forbidden = ["firebase", "googleapis.com", "https://", "http://"]
+          found = [x for x in forbidden if x in html.lower()]
+          if found:
+              raise SystemExit("Unexpected online dependency: " + ", ".join(found))
+          parts = html.split("<script>", 1)
+          if len(parts) != 2 or "</script>" not in parts[1]:
+              raise SystemExit("Offline app inline JavaScript was not found.")
+          Path("/tmp/ghazbadloon-offline.js").write_text(parts[1].split("</script>", 1)[0])
+          print("No remote service dependency found.")
+          PY
+          node --check /tmp/ghazbadloon-offline.js
+          node tests/smoke.mjs
+
+      - name: Install offline app dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Prepare launcher logo
+        run: |
+          mkdir -p assets
+          cp ../public/resources/finance-logo.png assets/icon-only.png
+          cp ../public/resources/finance-logo.png assets/icon-foreground.png
+          python - <<'PY'
+          import struct, zlib
+          from pathlib import Path
+          width = height = 1024
+          row = b"\x00" + bytes((7, 16, 12, 255)) * width
+          raw = row * height
+          def chunk(kind, data):
+              return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+          png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">2I5B", width, height, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+          Path("assets/icon-background.png").write_bytes(png)
+          PY
+
+      - name: Generate native Android project
+        run: npx cap add android
+
+      - name: Generate Android launcher icons
+        run: npx capacitor-assets generate --android
+
+      - name: Sync offline app into Android
+        run: npx cap sync android
+
+      - name: Remove Android network permissions from the app manifest
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          source = manifest.read_text()
+          source, internet_count = re.subn(
+              r'(?m)^\s*<uses-permission\s+android:name="android.permission.INTERNET"\s*/>\s*\n?',
+              '',
+              source,
+          )
+          source, state_count = re.subn(
+              r'(?m)^\s*<uses-permission\s+android:name="android.permission.ACCESS_NETWORK_STATE"\s*/>\s*\n?',
+              '',
+              source,
+          )
+          if 'android.permission.INTERNET' in source:
+              raise SystemExit("INTERNET permission declaration remains in app manifest.")
+          manifest.write_text(source)
+          print(f"Removed {internet_count} INTERNET and {state_count} ACCESS_NETWORK_STATE declarations from app manifest.")
+          PY
+
+      - name: Set Android version number
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          gradle = Path("android/app/build.gradle")
+          source = gradle.read_text()
+          version = os.environ["BUILD_NUMBER"]
+          source, a = re.subn(r'(?m)^(\s*versionCode\s+)\d+', lambda m: m.group(1) + version, source, count=1)
+          source, b = re.subn(r"""(?m)^(\s*versionName\s+)['"][^'"]+['"]""", lambda m: m.group(1) + '"1.0.' + version + '"', source, count=1)
+          if a != 1 or b != 1:
+              raise SystemExit("Android version fields were not found.")
+          gradle.write_text(source)
+          PY
+
+      - name: Restore persistent debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ghazbadloon-offline-debug-keystore-v1
+
+      - name: Build offline APK
+        working-directory: offline-android/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Verify APK signature and package ID
+        working-directory: offline-android
+        run: |
+          mkdir -p dist-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/GhazBadloon-Offline.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose dist-apk/GhazBadloon-Offline.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist-apk/GhazBadloon-Offline.apk | grep -E "package:|application-label:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions dist-apk/GhazBadloon-Offline.apk | tee /tmp/ghaz-permissions.txt
+          if grep -q "android.permission.INTERNET" /tmp/ghaz-permissions.txt; then
+            echo "ERROR: offline APK still requests INTERNET permission."
+            exit 1
+          fi
+          echo "Verified: APK has no INTERNET permission."
+          sha256sum dist-apk/GhazBadloon-Offline.apk
+          ls -lh dist-apk/GhazBadloon-Offline.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhazBadloon-Offline-APK
+          path: offline-android/dist-apk/GhazBadloon-Offline.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish direct APK download
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: offline-apk-${{ github.run_number }}
+          name: GhazBadloon Offline Android APK ${{ github.run_number }}
+          body: |
+            Standalone offline Android app.
+            Package: com.hafzaywb553.ghazbadloon.offline
+            Employee records and payroll are stored locally on this device.
+            Payroll tax uses the requested brackets and includes allowances.
+            Solar Hijri, Umm al-Qura Hijri and Gregorian date converter.
+            Local JSON backup/restore and CSV payroll export.
+            No Firebase, sign-in, server or internet connection is required for core app functions.
+            Debug-signed APK for direct installation and testing.
+          files: offline-android/dist-apk/GhazBadloon-Offline.apk
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build summary
+        if: always()
+        run: |
+          {
+            echo "## GhazBadloon Offline APK"
+            echo "- Package: com.hafzaywb553.ghazbadloon.offline"
+            echo "- Build: ${{ github.run_number }}"
+            echo "- Offline-only local employee and payroll app"
+            echo "- APK: GhazBadloon-Offline.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
