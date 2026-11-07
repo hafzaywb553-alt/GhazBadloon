@@ -98,7 +98,7 @@ jobs:
 
       - name: Set Android version number
         env:
-          BUILD_NUMBER: \${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           python - <<'PY'
           import os, re
@@ -147,8 +147,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: offline-apk-\${{ github.run_number }}
-          name: GhazBadloon Offline Android APK \${{ github.run_number }}
+          tag_name: offline-apk-${{ github.run_number }}
+          name: GhazBadloon Offline Android APK ${{ github.run_number }}
           body: |
             Standalone offline Android app.
             Package: com.hafzaywb553.ghazbadloon.offline
@@ -161,7 +161,7 @@ jobs:
           files: offline-android/dist-apk/GhazBadloon-Offline.apk
           make_latest: false
         env:
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build summary
         if: always()
@@ -169,7 +169,7 @@ jobs:
           {
             echo "## GhazBadloon Offline APK"
             echo "- Package: com.hafzaywb553.ghazbadloon.offline"
-            echo "- Build: \${{ github.run_number }}"
+            echo "- Build: ${{ github.run_number }}"
             echo "- Offline-only local employee and payroll app"
             echo "- APK: GhazBadloon-Offline.apk"
           } >> "$GITHUB_STEP_SUMMARY"
