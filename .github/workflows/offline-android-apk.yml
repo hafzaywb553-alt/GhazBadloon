@@ -66,6 +66,7 @@ jobs:
           print("No remote service dependency found.")
           PY
           node --check /tmp/ghazbadloon-offline.js
+          node tests/smoke.mjs
 
       - name: Install offline app dependencies
         run: npm install --no-audit --no-fund
