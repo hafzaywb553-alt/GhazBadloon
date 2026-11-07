@@ -50,7 +50,33 @@ jobs:
           mkdir -p assets
           cp public/resources/finance-logo.png assets/icon-only.png
           cp public/resources/finance-logo.png assets/icon-foreground.png
-          file assets/icon-only.png
+          python - <<'PY'
+          import struct, zlib
+          from pathlib import Path
+
+          width = height = 1024
+          pixel = bytes((7, 16, 12, 255))
+          scanline = b"\\x00" + pixel * width
+          raw = scanline * height
+
+          def chunk(kind, data):
+              return (
+                  struct.pack(">I", len(data))
+                  + kind
+                  + data
+                  + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+              )
+
+          png = (
+              b"\\x89PNG\\r\\n\\x1a\\n"
+              + chunk(b"IHDR", struct.pack(">2I5B", width, height, 8, 6, 0, 0, 0))
+              + chunk(b"IDAT", zlib.compress(raw, 9))
+              + chunk(b"IEND", b"")
+          )
+          Path("assets/icon-background.png").write_bytes(png)
+          print("Created 1024x1024 dark adaptive-icon background.")
+          PY
+          file assets/icon-only.png assets/icon-background.png
 
       - name: Generate the Android project
         run: npx cap add android
