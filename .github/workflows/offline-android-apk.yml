@@ -107,8 +107,8 @@ jobs:
           if marker not in source:
               raise SystemExit("Could not locate application element in manifest.")
           removals = (
-              '    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />\\n'
-              '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />\\n'
+              '    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />\n'
           )
           source = source.replace(marker, removals + marker, 1)
           manifest.write_text(source)
