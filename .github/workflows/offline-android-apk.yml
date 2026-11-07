@@ -91,6 +91,30 @@ jobs:
       - name: Generate native Android project
         run: npx cap add android
 
+      - name: Remove Android network permissions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          source = manifest.read_text()
+          android_ns = 'xmlns:android="http://schemas.android.com/apk/res/android"'
+          tools_ns = 'xmlns:tools="http://schemas.android.com/tools"'
+          if tools_ns not in source:
+              if android_ns not in source:
+                  raise SystemExit("Could not locate Android namespace in manifest.")
+              source = source.replace(android_ns, android_ns + " " + tools_ns, 1)
+          marker = "<application"
+          if marker not in source:
+              raise SystemExit("Could not locate application element in manifest.")
+          removals = (
+              '    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />\\n'
+              '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />\\n'
+          )
+          source = source.replace(marker, removals + marker, 1)
+          manifest.write_text(source)
+          print("Manifest merge rules will remove INTERNET and ACCESS_NETWORK_STATE.")
+          PY
+
       - name: Generate Android launcher icons
         run: npx capacitor-assets generate --android
 
@@ -133,6 +157,12 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk dist-apk/GhazBadloon-Offline.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose dist-apk/GhazBadloon-Offline.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist-apk/GhazBadloon-Offline.apk | grep -E "package:|application-label:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions dist-apk/GhazBadloon-Offline.apk | tee /tmp/ghaz-permissions.txt
+          if grep -q "android.permission.INTERNET" /tmp/ghaz-permissions.txt; then
+            echo "ERROR: offline APK still requests INTERNET permission."
+            exit 1
+          fi
+          echo "Verified: APK has no INTERNET permission."
           sha256sum dist-apk/GhazBadloon-Offline.apk
           ls -lh dist-apk/GhazBadloon-Offline.apk
 
